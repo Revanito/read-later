@@ -1,5 +1,7 @@
 # read-later
 
+Live at [later.vaultinc.fr](https://later.vaultinc.fr).
+
 A personal read-later app: paste a link, it fetches the page, extracts the article text, and summarizes
 it (summary + key points + tags) via a shared [1min.ai](https://1min.ai) proxy. No Discord bot (yet?), no
 browser extension (also yet?) - just a web form and a feed of summaries.
@@ -7,7 +9,9 @@ browser extension (also yet?) - just a web form and a feed of summaries.
 ## How it works
 
 1. Paste a URL into the box on `/`.
-2. The app fetches the page and extracts clean article text with [trafilatura](https://github.com/adbar/trafilatura).
+2. The app fetches the page and extracts clean article text, trying [readability-lxml](https://github.com/buriy/python-readability)
+   first (it avoids nav/sidebar blocks that trip up density-based extractors on some news sites), falling
+   back to [trafilatura](https://github.com/adbar/trafilatura) if that comes back too short.
 3. The extracted text is sent to 1min.ai for summarization (model configurable via `MODEL_SUMMARIZER`).
 4. The result (title, summary, key points, tags, full text) is stored in SQLite and shown on `/articles`.
 
@@ -34,6 +38,11 @@ docker compose up -d --build
 ```
 
 The app listens on port `8086` by default (see `docker-compose.yml`).
+
+## Exposing it publicly
+
+See [deploy/README.md](deploy/README.md) for the nginx reverse-proxy + certbot setup used for
+later.vaultinc.fr.
 
 ## Config
 
