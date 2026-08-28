@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Articles - read-later</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header>
+    <h1><a href="/">read-later</a></h1>
+    <a class="nav-link" href="/articles?archived=false">Inbox</a>
+    <a class="nav-link" href="/articles?archived=true">Archived</a>
+  </header>
+  <main>
+    {% if not items %}
+      <p class="empty">Nothing here yet.</p>
+    {% endif %}
+    {% for a in items %}
+      <div class="card">
+        <h2><a href="/articles/{{ a['id'] }}">{{ a['title'] or a['url'] }}</a></h2>
+        <div class="meta">
+          {{ a['domain'] }} &middot; {{ a['added_at'][:10] }}
+          {% if a['status'] == 'failed' %}<span class="badge-failed">failed</span>{% endif %}
+        </div>
+        {% if a['summary'] %}<div class="summary">{{ a['summary'] }}</div>{% endif %}
+        {% if a['tags'] %}
+          <div class="tags">
+            {% for t in a['tags'].split(',') %}<span class="tag">{{ t }}</span>{% endfor %}
+          </div>
+        {% endif %}
+      </div>
+    {% endfor %}
+  </main>
+</body>
+</html>

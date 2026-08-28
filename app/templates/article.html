@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ a['title'] or a['url'] }} - read-later</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header>
+    <h1><a href="/">read-later</a></h1>
+    <a class="nav-link" href="/articles">Articles</a>
+  </header>
+  <main>
+    <div class="card">
+      <h2><a href="{{ a['url'] }}" target="_blank" rel="noopener">{{ a['title'] or a['url'] }}</a></h2>
+      <div class="meta">
+        {{ a['domain'] }} &middot; {{ a['added_at'][:10] }}
+        {% if a['status'] == 'failed' %}<span class="badge-failed">failed</span>{% endif %}
+      </div>
+
+      {% if a['status'] == 'failed' %}
+        <p class="summary">Could not summarize this link: {{ a['error'] }}</p>
+      {% else %}
+        {% if a['summary'] %}<p class="summary">{{ a['summary'] }}</p>{% endif %}
+        {% if a['key_points'] %}
+          <ul class="key-points">
+            {% for p in a['key_points'].split('\n') %}<li>{{ p }}</li>{% endfor %}
+          </ul>
+        {% endif %}
+        {% if a['tags'] %}
+          <div class="tags">
+            {% for t in a['tags'].split(',') %}<span class="tag">{{ t }}</span>{% endfor %}
+          </div>
+        {% endif %}
+      {% endif %}
+
+      <div class="actions">
+        {% if a['status'] == 'failed' %}
+          <form action="/articles/{{ a['id'] }}/retry" method="post"><button type="submit">Retry</button></form>
+        {% endif %}
+        {% if not a['read_at'] %}
+          <form action="/articles/{{ a['id'] }}/read" method="post"><button type="submit">Mark read</button></form>
+        {% endif %}
+        {% if a['archived'] %}
+          <form action="/articles/{{ a['id'] }}/unarchive" method="post"><button type="submit">Unarchive</button></form>
+        {% else %}
+          <form action="/articles/{{ a['id'] }}/archive" method="post"><button type="submit">Archive</button></form>
+        {% endif %}
+        <form action="/articles/{{ a['id'] }}/delete" method="post" onsubmit="return confirm('Delete this article?');">
+          <button type="submit">Delete</button>
+        </form>
+      </div>
+
+      {% if a['full_text'] %}
+        <details style="margin-top: 1.25rem;">
+          <summary class="nav-link" style="cursor: pointer;">Full extracted text</summary>
+          <div class="full-text">{{ a['full_text'] }}</div>
+        </details>
+      {% endif %}
+    </div>
+  </main>
+</body>
+</html>

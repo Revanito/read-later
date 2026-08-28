@@ -1,0 +1,12 @@
+services:
+  read-later:
+    build: ./app
+    container_name: read-later
+    ports:
+      - "8086:8000"
+    volumes:
+      - ./data:/data
+      - ./app/prompts:/app/prompts
+    env_file:
+      - .env
+    restart: unless-stopped
