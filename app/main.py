@@ -1,3 +1,4 @@
+import hashlib
 import logging
 from contextlib import asynccontextmanager
 from urllib.parse import urlparse
@@ -16,6 +17,9 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 log = logging.getLogger("main")
 
 templates = Jinja2Templates(directory="templates")
+# Cache-busts the favicon link so a redeployed icon doesn't stay stuck behind browsers' aggressive
+# favicon caching - same approach as devops-feed-curator.
+_favicon_version = hashlib.sha256(open("static/favicon.png", "rb").read()).hexdigest()[:10]
 
 
 @asynccontextmanager
@@ -50,7 +54,7 @@ async def _process(id_: str, url: str) -> None:
 
 @app.get("/")
 def index(request: Request):
-    return templates.TemplateResponse("index.html", {"request": request})
+    return templates.TemplateResponse("index.html", {"request": request, "favicon_version": _favicon_version})
 
 
 @app.post("/add")
@@ -68,7 +72,9 @@ async def add(url: str = Form(...)):
 @app.get("/articles")
 def articles(request: Request, archived: bool = False):
     items = db.list_articles(archived=archived)
-    return templates.TemplateResponse("articles.html", {"request": request, "items": items, "archived": archived})
+    return templates.TemplateResponse("articles.html", {
+        "request": request, "items": items, "archived": archived, "favicon_version": _favicon_version,
+    })
 
 
 @app.get("/articles/{id_}")
@@ -76,7 +82,7 @@ def article(request: Request, id_: str):
     row = db.get_article(id_)
     if row is None:
         return RedirectResponse("/articles", status_code=303)
-    return templates.TemplateResponse("article.html", {"request": request, "a": row})
+    return templates.TemplateResponse("article.html", {"request": request, "a": row, "favicon_version": _favicon_version})
 
 
 @app.post("/articles/{id_}/retry")
