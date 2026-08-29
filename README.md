@@ -1,7 +1,5 @@
 # read-later
 
-Live at [later.vaultinc.fr](https://later.vaultinc.fr).
-
 A personal read-later app: paste a link, it fetches the page, extracts the article text, and summarizes
 it (summary + key points + tags) via a shared [1min.ai](https://1min.ai) proxy. No Discord bot (yet?), no
 browser extension (also yet?) - just a web form and a feed of summaries.
@@ -9,6 +7,9 @@ browser extension (also yet?) - just a web form and a feed of summaries.
 ## How it works
 
 1. Paste a URL into the box on `/`.
+
+![Paste a URL into the box on the read-later homepage](docs/read-later.png)
+
 2. The app fetches the page and extracts clean article text, trying [readability-lxml](https://github.com/buriy/python-readability)
    first (it avoids nav/sidebar blocks that trip up density-based extractors on some news sites), falling
    back to [trafilatura](https://github.com/adbar/trafilatura) if that comes back too short.
@@ -55,7 +56,3 @@ All settings are environment variables (see `.env.example`):
 | `MODEL_SUMMARIZER` | `claude-haiku-4-5-20251001` | any model ID 1min.ai's `chat-with-ai` accepts |
 | `DB_PATH` | `/data/read-later.db` | |
 | `MAX_ARTICLE_CHARS` | `20000` | article text is truncated to this before summarizing |
-
-## License
-
-MIT
