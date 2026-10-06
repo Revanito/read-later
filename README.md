@@ -53,6 +53,6 @@ All settings are environment variables (see `.env.example`):
 |---|---|---|
 | `ONE_MIN_API_KEY` | — | required |
 | `ONE_MIN_BASE_URL` | `https://api.1min.ai` | |
-| `MODEL_SUMMARIZER` | `claude-haiku-4-5-20251001` | any model ID 1min.ai's `chat-with-ai` accepts |
+| `MODEL_SUMMARIZER` | `us.anthropic.claude-haiku-4-5-20251001-v1:0` | any model ID 1min.ai's `chat-with-ai` accepts |
 | `DB_PATH` | `/data/read-later.db` | |
 | `MAX_ARTICLE_CHARS` | `20000` | article text is truncated to this before summarizing |
