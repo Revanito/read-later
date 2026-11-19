@@ -6,7 +6,7 @@ class Settings(BaseSettings):
 
     one_min_api_key: str
     one_min_base_url: str = "https://api.1min.ai"
-    model_summarizer: str = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
+    model_summarizer: str = "us.anthropic.claude-haiku-5-5"
 
     db_path: str = "/data/read-later.db"
 
