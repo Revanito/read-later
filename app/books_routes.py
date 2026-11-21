@@ -146,6 +146,36 @@ def add_book(
     return _redirect(f"/books/book/{book_id}", "Added to your library.")
 
 
+@router.post("/add-manual")
+def add_manual(
+    title: str = Form(...), author: str = Form(""), year: str = Form(""), position: str = Form(""),
+    series_id: str = Form(""), new_series: str = Form(""), status: str = Form("want"),
+):
+    """A book neither database lists yet (e.g. a self-published release from this week). It's queued for
+    lookup and links itself to Hardcover / Open Library once it shows up there."""
+    title = title.strip()
+    if not title:
+        return _redirect("/books", "A title is needed to add a book.")
+    existing = books_db.find_by_title(title)
+    if existing:
+        return _redirect(f"/books/book/{existing['id']}", "Already in your library.")
+
+    target = _int_or_none(series_id)
+    if series_id == "new" and new_series.strip():
+        target = books_db.create_series(new_series, author)
+    elif target is not None and books_db.get_series(target) is None:
+        target = None
+
+    book_id = books_db.add_book({"title": title, "author": author.strip(), "year": _int_or_none(year)},
+                                target, position.strip(), status)
+    books_db.queue_lookup(book_id)
+    if target:
+        books_db.place_by_position(book_id)
+        return _redirect(f"/books/series/{target}#b{book_id}",
+                         f"Added “{title}”. It links itself to Hardcover or Open Library once it's listed there.")
+    return _redirect(f"/books/book/{book_id}", "Added. It links itself to Hardcover or Open Library once it's listed there.")
+
+
 @router.post("/import-series")
 async def import_series(hc_id: str = Form(...)):
     hc = _int_or_none(hc_id)
@@ -189,8 +219,11 @@ async def check_now():
     result = await watcher.run_check()
     if result["error"]:
         return _redirect("/books/new", f"Check failed: {result['error']}")
-    n = result["found"]
-    return _redirect("/books/new", f"Checked. {n} new release{'s' if n != 1 else ''} found." if n else "Checked. Nothing new.")
+    n, linked = result["found"], result.get("linked", 0)
+    msg = f"Checked. {n} new release{'s' if n != 1 else ''} found." if n else "Checked. Nothing new."
+    if linked:
+        msg += f" Linked {linked} manually added book{'s' if linked != 1 else ''}."
+    return _redirect("/books/new", msg)
 
 
 @router.post("/new/{hc_id}/dismiss")
@@ -351,6 +384,7 @@ def book_page(request: Request, book_id: int, notice: str = ""):
         "all_series": books_db.all_series_names(),
         "subjects": [x for x in (b["subjects"] or "").split(",") if x],
         "recs": books_db.get_recs("book", book_id),
+        "pending_lookup": books_db.is_pending_lookup(book_id),
     })
 
 
@@ -365,6 +399,18 @@ def book_move(book_id: int, direction: str = Form(...)):
     books_db.move_book(book_id, direction)
     b = books_db.get_book(book_id)
     return _redirect(f"/books/series/{b['series_id']}#b{book_id}" if b and b["series_id"] else "/books")
+
+
+@router.post("/book/{book_id}/lookup")
+async def book_lookup(book_id: int):
+    b = books_db.get_book(book_id)
+    if b is None:
+        return _redirect("/books")
+    source = await watcher.lookup_one(b)
+    if source:
+        return _redirect(f"/books/book/{book_id}", f"Found it on {source}. Cover and details filled in.")
+    return _redirect(f"/books/book/{book_id}",
+                     "Not listed on Hardcover or Open Library yet. The app keeps checking every few hours.")
 
 
 @router.post("/book/{book_id}/read-above")

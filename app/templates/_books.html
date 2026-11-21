@@ -176,6 +176,36 @@
   {% endif %}
 {%- endmacro %}
 
+{# "+ Add manually" for books no database lists yet. With fixed=true the target series is implied. #}
+{% macro manual_form(all_series, target_series=none, title='', author='', fixed=false, open=false) -%}
+  <details class="inline-form manual-add"{% if open %} open{% endif %}>
+    <summary class="btn-small">+ Add manually</summary>
+    <form action="/books/add-manual" method="post" class="manual-form">
+      <input type="text" name="title" value="{{ title }}" placeholder="Title" required aria-label="Title">
+      <input type="text" name="author" value="{{ author or '' }}" placeholder="Author" aria-label="Author">
+      <input type="text" name="position" placeholder="Series #" class="narrow" aria-label="Number in series">
+      <input type="number" name="year" placeholder="Year" class="narrow" aria-label="Year">
+      {% if fixed and target_series %}
+        <input type="hidden" name="series_id" value="{{ target_series['id'] }}">
+      {% else %}
+        <select name="series_id" class="series-pick" aria-label="Series">
+          <option value="">Standalone</option>
+          {% for s in all_series %}
+            <option value="{{ s['id'] }}"{% if target_series and target_series['id'] == s['id'] %} selected{% endif %}>{{ s['name'] }}</option>
+          {% endfor %}
+          <option value="new">+ New series&hellip;</option>
+        </select>
+        <input type="text" name="new_series" class="new-series" placeholder="Series name" hidden>
+      {% endif %}
+      <select name="status" aria-label="Status">
+        {% for key, label in STATUSES.items() %}<option value="{{ key }}">{{ label }}</option>{% endfor %}
+      </select>
+      <button type="submit" class="btn-small btn-accent">Add</button>
+    </form>
+    <p class="meta">For books Hardcover and Open Library don't list yet. It links itself to them (cover, year, series #) once they do.</p>
+  </details>
+{%- endmacro %}
+
 {# Toggle the "new series name" box when "+ New series..." is picked. #}
 {% macro new_series_script() -%}
 <script>

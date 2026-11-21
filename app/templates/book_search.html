@@ -54,6 +54,10 @@
     <div class="hit-grid">
       {% for h in ol_hits %}{{ ui.hit_card(h, all_series, target_series) }}{% endfor %}
     </div>
+
+    <h2 class="section-title">Can't find it?</h2>
+    {{ ui.manual_form(all_series, target_series, title=q, author=target_series['author'] if target_series else '',
+                      open=not hc_hits and not ol_hits) }}
   {% endif %}
 {% endblock %}
 {% block scripts %}{{ ui.new_series_script() }}{% endblock %}

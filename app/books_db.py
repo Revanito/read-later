@@ -68,6 +68,11 @@ CREATE TABLE IF NOT EXISTS new_releases (
     found_at TEXT NOT NULL,
     dismissed INTEGER NOT NULL DEFAULT 0
 );
+CREATE TABLE IF NOT EXISTS lookup_queue (
+    book_id INTEGER PRIMARY KEY,
+    added_at TEXT NOT NULL,
+    tried_at TEXT
+);
 CREATE TABLE IF NOT EXISTS meta (
     key TEXT PRIMARY KEY,
     value TEXT
@@ -91,8 +96,15 @@ def init_books_db() -> None:
         conn.executescript(_SCHEMA)
 
 
+_NUMBER_WORDS = {w: str(i) for i, w in enumerate(
+    "zero one two three four five six seven eight nine ten eleven twelve".split())}
+
+
 def _norm_title(title: str) -> str:
-    return re.sub(r"[^a-z0-9]+", " ", (title or "").lower()).strip()
+    """Comparable title: lowercase, punctuation dropped, number words as digits - so
+    "No Safe Ground, Part One" == "No Safe Ground: Part 1"."""
+    words = re.sub(r"[^a-z0-9]+", " ", (title or "").lower()).split()
+    return " ".join(_NUMBER_WORDS.get(w, w) for w in words)
 
 
 # --- series ---------------------------------------------------------------------------------------
@@ -168,6 +180,7 @@ def delete_series(series_id: int) -> None:
         conn.execute("DELETE FROM series WHERE id = ?", (series_id,))
         conn.execute("DELETE FROM book_recs WHERE seed_type = 'series' AND seed_id = ?", (series_id,))
         conn.executemany("DELETE FROM book_recs WHERE seed_type = 'book' AND seed_id = ?", [(i,) for i in ids])
+        conn.executemany("DELETE FROM lookup_queue WHERE book_id = ?", [(i,) for i in ids])
 
 
 def series_books(series_id: int) -> list[sqlite3.Row]:
@@ -324,6 +337,108 @@ def delete_book(book_id: int) -> None:
     with get_conn() as conn:
         conn.execute("DELETE FROM books WHERE id = ?", (book_id,))
         conn.execute("DELETE FROM book_recs WHERE seed_type = 'book' AND seed_id = ?", (book_id,))
+        conn.execute("DELETE FROM lookup_queue WHERE book_id = ?", (book_id,))
+
+
+# --- manually added books -------------------------------------------------------------------------
+# A manual book sits in lookup_queue until it's linked to Hardcover. The background check (watcher.py)
+# retries the lookup; Open Library links fill in cover/year meanwhile but keep it queued for Hardcover.
+
+def find_by_title(title: str) -> sqlite3.Row | None:
+    key = _norm_title(title)
+    with get_conn() as conn:
+        for r in conn.execute("SELECT * FROM books"):
+            if _norm_title(r["title"]) == key:
+                return r
+    return None
+
+
+def queue_lookup(book_id: int) -> None:
+    with get_conn() as conn:
+        conn.execute("INSERT OR IGNORE INTO lookup_queue (book_id, added_at) VALUES (?, ?)", (book_id, _now()))
+
+
+def is_pending_lookup(book_id: int) -> bool:
+    with get_conn() as conn:
+        return conn.execute(
+            "SELECT 1 FROM lookup_queue q JOIN books b ON b.id = q.book_id WHERE q.book_id = ? AND b.hc_id IS NULL",
+            (book_id,)).fetchone() is not None
+
+
+def pending_lookups(limit: int, min_age_hours: float) -> list[sqlite3.Row]:
+    """Queued manual books still missing a Hardcover link, not retried within min_age_hours."""
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=min_age_hours)).isoformat()
+    with get_conn() as conn:
+        return conn.execute(
+            """SELECT b.* FROM lookup_queue q JOIN books b ON b.id = q.book_id
+               WHERE b.hc_id IS NULL AND (q.tried_at IS NULL OR q.tried_at < ?)
+               ORDER BY q.tried_at IS NOT NULL, q.tried_at LIMIT ?""",
+            (cutoff, limit),
+        ).fetchall()
+
+
+def mark_lookup_tried(book_id: int) -> None:
+    with get_conn() as conn:
+        conn.execute("UPDATE lookup_queue SET tried_at = ? WHERE book_id = ?", (_now(), book_id))
+
+
+def find_unlinked_by_title(title: str) -> sqlite3.Row | None:
+    key = _norm_title(title)
+    with get_conn() as conn:
+        for r in conn.execute("SELECT * FROM books WHERE hc_id IS NULL"):
+            if _norm_title(r["title"]) == key:
+                return r
+    return None
+
+
+def link_book(book_id: int, hit: dict, source: str, position: str = "") -> None:
+    """Attach a Hardcover ('hc') or Open Library ('ol') record to a book, filling only empty fields so
+    nothing you typed by hand gets overwritten."""
+    year = hit.get("year") or (int(hit["release_date"][:4]) if hit.get("release_date") else None)
+    common = (hit.get("cover_url") or "", year, ",".join(hit.get("subjects") or []))
+    with get_conn() as conn:
+        if source == "hc":
+            conn.execute(
+                """UPDATE books SET hc_id = ?, hc_slug = ?,
+                       cover_url = COALESCE(NULLIF(cover_url, ''), NULLIF(?, '')), year = COALESCE(year, ?),
+                       subjects = COALESCE(NULLIF(subjects, ''), ?),
+                       position_label = COALESCE(NULLIF(position_label, ''), ?) WHERE id = ?""",
+                (hit["hc_id"], hit.get("hc_slug") or hit.get("slug") or "", *common, position or "", book_id),
+            )
+        else:
+            conn.execute(
+                """UPDATE books SET ol_key = ?,
+                       cover_url = COALESCE(NULLIF(cover_url, ''), NULLIF(?, '')), year = COALESCE(year, ?),
+                       subjects = COALESCE(NULLIF(subjects, ''), ?) WHERE id = ?""",
+                (hit["ol_key"], *common, book_id),
+            )
+
+
+def place_by_position(book_id: int) -> None:
+    """Move a newly added book to just before the first book with a higher series number, so a
+    manual "#8" lands after #7 instead of at the very end. No-op without a numeric number."""
+    with get_conn() as conn:
+        b = conn.execute("SELECT series_id, position_label FROM books WHERE id = ?", (book_id,)).fetchone()
+        if b is None or b["series_id"] is None:
+            return
+        try:
+            p = float(b["position_label"])
+        except (TypeError, ValueError):
+            return
+        rows = [r for r in conn.execute(
+            "SELECT id, position_label FROM books WHERE series_id = ? ORDER BY sort_order, id", (b["series_id"],))
+            if r["id"] != book_id]
+        at = len(rows)
+        for i, r in enumerate(rows):
+            try:
+                if float(r["position_label"]) > p:
+                    at = i
+                    break
+            except (TypeError, ValueError):
+                continue
+        ids = [r["id"] for r in rows]
+        ids.insert(at, book_id)
+        _renumber(conn, ids)
 
 
 def import_series_books(series_id: int, hc_books: list[dict]) -> int:

@@ -942,6 +942,39 @@ a.rel-title:hover { color: var(--accent); }
   margin-top: 1rem;
 }
 
+/* --- add manually --- */
+
+.manual-add { margin-top: 0.75rem; }
+.manual-add .meta { margin: 0.4rem 0 0; }
+.manual-form { align-items: center; }
+
+.manual-form input, .manual-form select {
+  padding: 0.4rem 0.6rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.85rem;
+}
+
+.manual-form input[name="title"] { flex: 1 1 14rem; }
+.manual-form input[name="author"] { flex: 1 1 10rem; }
+.manual-form .narrow { width: 6.5rem; }
+
+.lookup-note {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-top: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+}
+
+.lookup-note form { margin: 0; }
+
 .src { font-size: 0.75rem; }
 .src-hc { color: var(--accent); }
 .sample { font-style: italic; }

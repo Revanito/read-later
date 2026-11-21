@@ -25,6 +25,14 @@
         {% if b['finished_at'] %}<span class="meta">finished {{ b['finished_at'][:10] }}</span>{% endif %}
       </div>
       {% if b['notes'] %}<p class="summary">{{ b['notes'] }}</p>{% endif %}
+      {% if pending_lookup %}
+        <div class="lookup-note">
+          <span class="meta">Added manually{% if b['ol_key'] %}, found on Open Library{% endif %}. Waiting for it to appear on Hardcover; checked every few hours.</span>
+          <form action="/books/book/{{ b['id'] }}/lookup" method="post" onsubmit="this.querySelector('button').disabled = true;">
+            <button type="submit" class="btn-small">Look it up now</button>
+          </form>
+        </div>
+      {% endif %}
       <div class="meta links">
         {% if b['hc_slug'] %}<a href="https://hardcover.app/books/{{ b['hc_slug'] }}" target="_blank" rel="noopener">Hardcover</a>{% endif %}
         {% if b['ol_key'] %}<a href="https://openlibrary.org{{ b['ol_key'] }}" target="_blank" rel="noopener">Open Library</a>{% endif %}

@@ -72,6 +72,18 @@ progress counts, handy for novellas you don't care about).
   costs no credits. Each pick has a **Find** link that runs a search for it. The prompt lives in
   `app/prompts/recommender_system_prompt.txt` (bind-mounted, editable without a rebuild).
 
+**Books no database has yet** (e.g. a self-published release from this week): use **+ Add manually** on a
+series page or at the bottom of search results. Give it a title, author and (optionally) series # and year;
+with a series # it slots in after the previous number. Manual books link themselves later, filling in
+cover, year and series # without overwriting what you typed:
+
+- every background check retries up to 8 of them on Hardcover, then Open Library (a match needs the same
+  title, ignoring punctuation and "One"/"1", and the same author surname; books without an author are
+  never auto-linked);
+- if the new-release check sees the book from a followed author or watched series, it links it on the spot;
+- **Sync from Hardcover** on the series page matches by title too;
+- the book page has **Look it up now** while it's still unlinked.
+
 **Catching up on a long series:** every row on a series page has **✓ Read all above**, which marks
 every earlier book in your read order as Read in one click (skipped books stay skipped).
 
