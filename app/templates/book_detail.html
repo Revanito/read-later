@@ -13,6 +13,7 @@
     <div class="book-hero-body">
       <h2 class="page-title">{{ b['title'] }}</h2>
       <div class="meta">{{ b['author'] or 'Unknown author' }}{% if b['year'] %} &middot; {{ b['year'] }}{% endif %}</div>
+      {{ ui.follow_buttons(b['author'], '/books/book/' ~ b['id']) }}
       {% if series %}
         <div class="meta">
           {% if b['position_label'] %}#{{ b['position_label'] }} in {% else %}Part of {% endif %}

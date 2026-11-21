@@ -55,6 +55,38 @@ query Search($q: String!, $type: String!, $perPage: Int!) {
 """
 
 
+# New-release watch: every recent/upcoming book by a followed author OR in a watched series, in one
+# top-level field (= 1 request against the rate limit). Same duplicate/partial/compilation filters as the
+# series import. The author match deliberately doesn't filter on contributor_role, because some primary
+# author credits have no role set.
+_WATCH_QUERY = """
+query Watch($authorIds: [Int!]!, $seriesIds: [Int!]!, $since: date!) {
+  books(
+    where: {
+      _or: [
+        {contributions: {author_id: {_in: $authorIds}, contributable_type: {_eq: "Book"}}},
+        {book_series: {series_id: {_in: $seriesIds}}}
+      ],
+      release_date: {_gte: $since},
+      canonical_id: {_is_null: true},
+      is_partial_book: {_eq: false},
+      compilation: {_eq: false}
+    }
+    order_by: {release_date: asc}
+    limit: 200
+  ) {
+    id
+    title
+    slug
+    release_date
+    image { url }
+    contributions { author { id name } contributor_role { slug } }
+    book_series { position compilation series { id name slug } }
+  }
+}
+"""
+
+
 class HardcoverError(Exception):
     pass
 
@@ -83,7 +115,7 @@ async def _query(query: str, variables: dict) -> dict:
         try:
             resp = await client.post(_URL, headers=headers, json={"query": query, "variables": variables})
         except httpx.HTTPError as exc:
-            raise HardcoverError(f"Hardcover request failed: {exc or type(exc).__name__}") from exc
+            raise HardcoverError(f"Hardcover request failed: {str(exc) or type(exc).__name__}") from exc
     try:
         payload = resp.json()
     except ValueError:
@@ -178,6 +210,54 @@ async def search_books(query: str, limit: int = 15) -> list[dict]:
 async def search_series(query: str, limit: int = 8) -> list[dict]:
     data = await _query(_SEARCH_QUERY, {"q": query, "type": "Series", "perPage": limit})
     return [s for s in (_series_hit(d) for d in _hits(data)) if s["hc_id"]]
+
+
+async def search_authors(query: str, limit: int = 6) -> list[dict]:
+    data = await _query(_SEARCH_QUERY, {"q": query, "type": "Author", "perPage": limit})
+    out = []
+    for d in _hits(data):
+        hc_id = _int(d.get("id"))
+        if not hc_id:
+            continue
+        out.append({
+            "hc_id": hc_id,
+            "name": d.get("name") or "Unknown",
+            "slug": d.get("slug") or "",
+            "books_count": d.get("books_count") or 0,
+            "series_names": [str(s) for s in (d.get("series_names") or [])][:4],
+            "books": [b if isinstance(b, str) else (b or {}).get("title", "") for b in (d.get("books") or [])][:3],
+        })
+    return out
+
+
+async def watch_books(author_ids: list[int], series_ids: list[int], since: str) -> list[dict]:
+    """Recent and upcoming books (release_date >= since) by the given authors or in the given series."""
+    data = await _query(_WATCH_QUERY, {"authorIds": author_ids, "seriesIds": series_ids, "since": since})
+    watched_series = set(series_ids)
+    out = []
+    for b in data.get("books") or []:
+        if not b.get("id") or not b.get("release_date"):
+            continue
+        contribs = b.get("contributions") or []
+        authors = [c for c in contribs if ((c or {}).get("contributor_role") or {}).get("slug") in (None, "author")]
+        authors = authors or contribs
+        entries = [e for e in (b.get("book_series") or []) if not e.get("compilation") and (e.get("series") or {}).get("id")]
+        # Prefer the series we're watching, so "#8 in Lee Harden" beats some umbrella series.
+        entries.sort(key=lambda e: (e["series"]["id"] not in watched_series, e.get("position") is None))
+        entry = entries[0] if entries else None
+        out.append({
+            "hc_id": _int(b["id"]),
+            "title": b.get("title") or "Untitled",
+            "slug": b.get("slug") or "",
+            "release_date": str(b["release_date"])[:10],
+            "cover_url": _image_url(b.get("image")),
+            "author_ids": [_int(((c or {}).get("author") or {}).get("id")) for c in authors],
+            "author": ", ".join(n for n in (((c or {}).get("author") or {}).get("name") for c in authors[:2]) if n),
+            "series_hc_id": _int(entry["series"]["id"]) if entry else None,
+            "series_name": entry["series"].get("name", "") if entry else "",
+            "position": _position_label(entry.get("position")) if entry else "",
+        })
+    return out
 
 
 async def get_series(series_id: int) -> dict:

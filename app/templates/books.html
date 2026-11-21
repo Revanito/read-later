@@ -17,6 +17,8 @@
       <a class="nav-link{% if show == 'active' %} active{% endif %}" href="/books?show=active">In progress</a>
       <a class="nav-link{% if show == 'all' %} active{% endif %}" href="/books?show=all">Everything</a>
     </div>
+    <div class="toolbar-right">
+    <a class="btn-small" href="/books/new">New releases &amp; following</a>
     <details class="inline-form">
       <summary class="btn-small">+ New series</summary>
       <form action="/books/series/new" method="post">
@@ -25,6 +27,7 @@
         <button type="submit" class="btn-small btn-accent">Create</button>
       </form>
     </details>
+    </div>
   </div>
 
   <h2 class="section-title">Series</h2>

@@ -107,6 +107,75 @@
   </section>
 {%- endmacro %}
 
+{# One new-release entry (notification panel + /books/new). `r` comes from books_db.active_releases. #}
+{% macro release_item(r, next, extra=false) -%}
+  <li class="rel-item{% if extra %} rel-extra{% endif %}"{% if extra %} hidden{% endif %}>
+    {{ cover(r.cover_url, r.title, 'xs') }}
+    <div class="rel-body">
+      {% if r.hc_slug %}
+        <a class="rel-title" href="https://hardcover.app/books/{{ r.hc_slug }}" target="_blank" rel="noopener">{{ r.title }}</a>
+      {% else %}
+        <span class="rel-title">{{ r.title }}</span>
+      {% endif %}
+      <div class="meta">
+        {{ r.author or 'Unknown author' }}{% if r.series_name %} &middot; {% if r.position %}#{{ r.position }} in {% endif %}{{ r.series_name }}{% endif %}
+      </div>
+      <div class="rel-when {{ 'rel-out' if r.out_now else 'rel-soon' }}">
+        {{ 'Out now' if r.out_now else 'Coming' }} &middot; {{ r.release_date }}
+        {% if r.owned %}<span class="meta">&middot; in your library</span>{% endif %}
+      </div>
+    </div>
+    <div class="rel-actions">
+      {% if r.saved_id %}
+        <a class="btn-small" href="/books/book/{{ r.saved_id }}">Open</a>
+      {% elif not r.owned %}
+        <form action="/books/add" method="post">
+          <input type="hidden" name="title" value="{{ r.title }}">
+          <input type="hidden" name="author" value="{{ r.author or '' }}">
+          <input type="hidden" name="year" value="{{ r.release_date[:4] }}">
+          <input type="hidden" name="cover_url" value="{{ r.cover_url or '' }}">
+          <input type="hidden" name="hc_id" value="{{ r.hc_id }}">
+          <input type="hidden" name="hc_slug" value="{{ r.hc_slug or '' }}">
+          <input type="hidden" name="position" value="{{ r.position or '' }}">
+          <input type="hidden" name="series_id" value="{{ r.local_series_id or '' }}">
+          <button type="submit" class="btn-small btn-accent" title="{{ 'Add to ' ~ r.series_name if r.local_series_id else 'Add as a standalone book' }}">Add</button>
+        </form>
+      {% endif %}
+      <form action="/books/new/{{ r.hc_id }}/dismiss" method="post">
+        <input type="hidden" name="next" value="{{ next }}">
+        <button type="submit" class="rel-dismiss" title="Dismiss" aria-label="Dismiss {{ r.title }}">&times;</button>
+      </form>
+    </div>
+  </li>
+{%- endmacro %}
+
+{# "+ Follow" / "Following" buttons for each name in an author credit like "A, B". #}
+{% macro follow_buttons(author_str, next) -%}
+  {% if hardcover_enabled and author_str %}
+    {% set fmap = followed_names() %}
+    <div class="follow-row">
+      {% for raw in author_str.split(',') %}
+        {% set name = raw.strip() %}
+        {% if name %}
+          {% if norm_name(name) in fmap %}
+            <form action="/books/unfollow" method="post">
+              <input type="hidden" name="hc_id" value="{{ fmap[norm_name(name)] }}">
+              <input type="hidden" name="next" value="{{ next }}">
+              <button type="submit" class="follow-btn following" title="Click to stop following">&check; Following {{ name }}</button>
+            </form>
+          {% else %}
+            <form action="/books/follow" method="post">
+              <input type="hidden" name="name" value="{{ name }}">
+              <input type="hidden" name="next" value="{{ next }}">
+              <button type="submit" class="follow-btn" title="Get notified about new books by {{ name }}">+ Follow {{ name }}</button>
+            </form>
+          {% endif %}
+        {% endif %}
+      {% endfor %}
+    </div>
+  {% endif %}
+{%- endmacro %}
+
 {# Toggle the "new series name" box when "+ New series..." is picked. #}
 {% macro new_series_script() -%}
 <script>

@@ -71,6 +71,26 @@ progress counts, handy for novellas you don't care about).
   costs no credits. Each pick has a **Find** link that runs a search for it. The prompt lives in
   `app/prompts/recommender_system_prompt.txt` (bind-mounted, editable without a rebuild).
 
+**Catching up on a long series:** every row on a series page has **✓ Read all above**, which marks
+every earlier book in your read order as Read in one click (skipped books stay skipped).
+
+### New releases
+
+Follow authors (the **+ Follow** button on any book or series page, or **New releases & following** on
+the Books tab) and the app checks Hardcover in the background every `WATCH_INTERVAL_HOURS` (default 6) for
+recent and upcoming books by them. Series you imported or linked from Hardcover are watched automatically,
+so new Horus Heresy books show up without following every author who writes for it.
+
+New finds appear in a small panel at the top left of every page once you're logged in: the first 3, then
+**Show N more**. Each one has **Add** (into the matching series if you have it) and **×** to dismiss it for
+good. Closing the panel hides it for the rest of that browser session; it comes back on your next visit, or
+as soon as something new turns up. Books already in your list (e.g. an upcoming entry that came in with a
+series import) only pop up on release day.
+
+Each check is a single Hardcover request no matter how many authors and series you track, and it looks
+back `WATCH_LOOKBACK_DAYS` (default 21) to catch books Hardcover's librarians add a few days after release.
+Nothing is sent anywhere: notifications only exist inside the app.
+
 ### Getting a Hardcover token
 
 1. Create a free account on [hardcover.app](https://hardcover.app).
@@ -122,7 +142,9 @@ All settings are environment variables (see `.env.example`):
 | `APP_PASSWORD` | — | required, the single login password |
 | `SECRET_KEY` | derived from `APP_PASSWORD` | optional, signs session cookies |
 | `SESSION_DAYS` | `30` | how long a login lasts |
-| `HARDCOVER_TOKEN` | empty | optional, enables series search/import (scope `read:catalog`) |
+| `HARDCOVER_TOKEN` | empty | optional, enables series search/import, following and new-release checks (scope `read:catalog`) |
+| `WATCH_INTERVAL_HOURS` | `6` | how often the new-release check runs |
+| `WATCH_LOOKBACK_DAYS` | `21` | how far back each check looks for recently released books |
 | `ONE_MIN_BASE_URL` | `https://api.1min.ai` | |
 | `MODEL_SUMMARIZER` | `us.anthropic.claude-haiku-5-5` | any model ID 1min.ai's `chat-with-ai` accepts |
 | `MODEL_RECOMMENDER` | `us.anthropic.claude-haiku-5-5` | used for book recommendations |

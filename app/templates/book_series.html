@@ -10,7 +10,9 @@
         <div class="meta">
           {{ s['author'] or 'Unknown author' }}
           {% if s['hc_slug'] %} &middot; <a href="https://hardcover.app/series/{{ s['hc_slug'] }}" target="_blank" rel="noopener">Hardcover</a>{% endif %}
+          {% if s['hc_id'] %} &middot; new entries watched{% endif %}
         </div>
+        {{ ui.follow_buttons(s['author'], '/books/series/' ~ s['id']) }}
       </div>
       <div class="progress-count">{{ done }}<span>/{{ total }}</span></div>
     </div>
@@ -49,6 +51,11 @@
           </div>
         </div>
         {{ ui.status_select(b, '/books/series/' ~ s['id'] ~ '#b' ~ b['id']) }}
+        {# Count is computed at click time so it stays right after drag-reordering. #}
+        <form action="/books/book/{{ b['id'] }}/read-above" method="post" class="read-above"
+              onsubmit="const n = [...this.closest('ol').children].indexOf(this.closest('li')); return confirm('Mark the ' + n + (n === 1 ? ' book' : ' books') + ' above this one as read? Skipped books stay skipped.');">
+          <button type="submit" title="Mark every book above this one as read">&check; Read all above</button>
+        </form>
         <div class="move-btns">
           <form action="/books/book/{{ b['id'] }}/move" method="post">
             <input type="hidden" name="direction" value="up">

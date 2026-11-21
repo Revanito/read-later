@@ -1,4 +1,5 @@
 import hashlib
+from datetime import date
 
 from fastapi.templating import Jinja2Templates
 
@@ -14,4 +15,8 @@ templates.env.globals.update(
     css_version=hashlib.sha256(open("static/style.css", "rb").read()).hexdigest()[:10],
     hardcover_enabled=hardcover.enabled(),
     STATUSES=books_db.STATUSES,
+    # Called from templates: the notification panel and the Follow buttons.
+    new_releases=lambda: books_db.active_releases(date.today().isoformat()),
+    followed_names=books_db.followed_name_map,
+    norm_name=books_db.norm_name,
 )

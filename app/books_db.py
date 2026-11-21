@@ -8,7 +8,7 @@ except when you hit "Reset to series order".
 import json
 import re
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from db import get_conn
 
@@ -48,6 +48,30 @@ CREATE TABLE IF NOT EXISTS books (
     finished_at TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_books_series ON books (series_id, sort_order);
+CREATE TABLE IF NOT EXISTS followed_authors (
+    hc_id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    slug TEXT,
+    followed_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS new_releases (
+    hc_id INTEGER PRIMARY KEY,
+    title TEXT NOT NULL,
+    author TEXT,
+    release_date TEXT NOT NULL,
+    cover_url TEXT,
+    hc_slug TEXT,
+    series_hc_id INTEGER,
+    series_name TEXT,
+    position TEXT,
+    reason TEXT,
+    found_at TEXT NOT NULL,
+    dismissed INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS meta (
+    key TEXT PRIMARY KEY,
+    value TEXT
+);
 CREATE TABLE IF NOT EXISTS book_recs (
     seed_type TEXT NOT NULL,
     seed_id INTEGER NOT NULL,
@@ -261,6 +285,24 @@ def set_status(book_id: int, status: str) -> None:
         )
 
 
+def mark_read_before(book_id: int) -> int:
+    """Mark every book earlier in this book's read order as read (catching up on a long series in one
+    click). Skipped books stay skipped and the clicked book itself is left alone. Returns how many
+    books changed."""
+    with get_conn() as conn:
+        b = conn.execute("SELECT id, series_id, sort_order FROM books WHERE id = ?", (book_id,)).fetchone()
+        if b is None or b["series_id"] is None:
+            return 0
+        # Same tie-break as the page's ORDER BY sort_order, id.
+        cur = conn.execute(
+            """UPDATE books SET status = 'read', finished_at = COALESCE(finished_at, ?)
+               WHERE series_id = ? AND status IN ('want', 'reading')
+                 AND (sort_order < ? OR (sort_order = ? AND id < ?))""",
+            (_now(), b["series_id"], b["sort_order"], b["sort_order"], b["id"]),
+        )
+        return cur.rowcount
+
+
 def update_book(book_id: int, title: str, author: str, year: int | None, position_label: str, notes: str) -> None:
     with get_conn() as conn:
         conn.execute(
@@ -334,6 +376,135 @@ def library_overview(limit: int = 80) -> list[str]:
     lines = [f"{s['name']} (series) - {s['author'] or 'unknown'}" for s in series]
     lines += [f"{b['title']} - {b['author'] or 'unknown'}" for b in books]
     return lines[:limit]
+
+
+# --- following & new releases ---------------------------------------------------------------------
+
+def norm_name(name: str) -> str:
+    """'James S. A. Corey' and 'James S.A. Corey' compare equal."""
+    return re.sub(r"[^a-z0-9]+", "", (name or "").lower())
+
+
+def follow_author(hc_id: int, name: str, slug: str = "") -> None:
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT INTO followed_authors (hc_id, name, slug, followed_at) VALUES (?, ?, ?, ?) "
+            "ON CONFLICT(hc_id) DO UPDATE SET name = excluded.name, slug = excluded.slug",
+            (hc_id, name, slug, _now()),
+        )
+
+
+def unfollow_author(hc_id: int) -> None:
+    with get_conn() as conn:
+        conn.execute("DELETE FROM followed_authors WHERE hc_id = ?", (hc_id,))
+
+
+def followed_authors() -> list[sqlite3.Row]:
+    with get_conn() as conn:
+        return conn.execute("SELECT * FROM followed_authors ORDER BY name COLLATE NOCASE").fetchall()
+
+
+def followed_name_map() -> dict[str, int]:
+    return {norm_name(a["name"]): a["hc_id"] for a in followed_authors()}
+
+
+def linked_series() -> list[sqlite3.Row]:
+    with get_conn() as conn:
+        return conn.execute(
+            "SELECT id, name, hc_id FROM series WHERE hc_id IS NOT NULL ORDER BY name COLLATE NOCASE"
+        ).fetchall()
+
+
+def library_authors() -> list[str]:
+    """Distinct author names across the library ("A, B" credits split), for follow suggestions."""
+    with get_conn() as conn:
+        rows = conn.execute("SELECT author FROM books UNION ALL SELECT author FROM series").fetchall()
+    seen: dict[str, str] = {}
+    for r in rows:
+        for name in (r["author"] or "").split(","):
+            name = name.strip()
+            if name:
+                seen.setdefault(norm_name(name), name)
+    return sorted(seen.values(), key=str.lower)
+
+
+def library_keys() -> tuple[set[int], set[str]]:
+    """Hardcover ids and normalized titles of everything saved, to tell 'new to me' from 'already have'."""
+    with get_conn() as conn:
+        rows = conn.execute("SELECT hc_id, title FROM books").fetchall()
+    return {r["hc_id"] for r in rows if r["hc_id"]}, {_norm_title(r["title"]) for r in rows}
+
+
+def upsert_release(r: dict, reason: str) -> bool:
+    """Store/refresh a release. Returns True when it's newly found. Dismissed ones stay dismissed."""
+    with get_conn() as conn:
+        exists = conn.execute("SELECT 1 FROM new_releases WHERE hc_id = ?", (r["hc_id"],)).fetchone()
+        if exists:
+            # Release dates and covers often get corrected after a book is first listed.
+            conn.execute(
+                """UPDATE new_releases SET title = ?, author = ?, release_date = ?,
+                       cover_url = COALESCE(NULLIF(?, ''), cover_url), hc_slug = ?, series_hc_id = ?,
+                       series_name = ?, position = ? WHERE hc_id = ?""",
+                (r["title"], r["author"], r["release_date"], r["cover_url"], r["slug"], r["series_hc_id"],
+                 r["series_name"], r["position"], r["hc_id"]),
+            )
+            return False
+        conn.execute(
+            """INSERT INTO new_releases (hc_id, title, author, release_date, cover_url, hc_slug, series_hc_id,
+                   series_name, position, reason, found_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (r["hc_id"], r["title"], r["author"], r["release_date"], r["cover_url"], r["slug"], r["series_hc_id"],
+             r["series_name"], r["position"], reason, _now()),
+        )
+        return True
+
+
+def active_releases(today: str, recent_days: int = 14) -> list[dict]:
+    """What the notification panel shows, newest first then upcoming:
+    - books you don't have yet: out now, or coming soon;
+    - books already in your library (e.g. listed in a series before release): only once they're out,
+      for `recent_days` days, so release day still gets a heads-up."""
+    hc_ids, titles = library_keys()
+    with get_conn() as conn:
+        rows = conn.execute("SELECT * FROM new_releases WHERE dismissed = 0").fetchall()
+        local_series = {r["hc_id"]: r["id"] for r in conn.execute(
+            "SELECT id, hc_id FROM series WHERE hc_id IS NOT NULL")}
+    cutoff = (datetime.fromisoformat(today) - timedelta(days=recent_days)).date().isoformat()
+    out = []
+    for r in rows:
+        owned = r["hc_id"] in hc_ids or _norm_title(r["title"]) in titles
+        out_now = r["release_date"] <= today
+        if owned and not (out_now and r["release_date"] >= cutoff):
+            continue
+        item = dict(r)
+        item["owned"] = owned
+        item["out_now"] = out_now
+        item["local_series_id"] = local_series.get(r["series_hc_id"])
+        item["saved_id"] = None
+        if owned:
+            b = find_book(r["hc_id"])
+            item["saved_id"] = b["id"] if b else None
+        out.append(item)
+    # Out-now first (most recent release on top), then upcoming (soonest first).
+    released = sorted([i for i in out if i["out_now"]], key=lambda i: i["release_date"], reverse=True)
+    upcoming = sorted([i for i in out if not i["out_now"]], key=lambda i: i["release_date"])
+    return released + upcoming
+
+
+def dismiss_release(hc_id: int) -> None:
+    with get_conn() as conn:
+        conn.execute("UPDATE new_releases SET dismissed = 1 WHERE hc_id = ?", (hc_id,))
+
+
+def meta_get(key: str) -> str | None:
+    with get_conn() as conn:
+        row = conn.execute("SELECT value FROM meta WHERE key = ?", (key,)).fetchone()
+    return row["value"] if row else None
+
+
+def meta_set(key: str, value: str | None) -> None:
+    with get_conn() as conn:
+        conn.execute("INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                     (key, value))
 
 
 # --- recommendations cache ------------------------------------------------------------------------

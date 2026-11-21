@@ -11,6 +11,7 @@ from fastapi.staticfiles import StaticFiles
 import auth
 import books_db
 import db
+import watcher
 from books_routes import router as books_router
 from extractor import ExtractionError, fetch_and_extract
 from summarizer import SummarizeError, summarize
@@ -24,7 +25,9 @@ log = logging.getLogger("main")
 async def lifespan(app: FastAPI):
     db.init_db()
     books_db.init_books_db()
+    watch_task = asyncio.create_task(watcher.loop())
     yield
+    watch_task.cancel()
 
 
 app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)

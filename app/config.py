@@ -32,5 +32,12 @@ class Settings(BaseSettings):
     # alone, just without automatic series/read-order import.
     hardcover_token: str = ""
 
+    # --- New-release watch ---
+    # How often the background check asks Hardcover for new books by followed authors / in imported
+    # series. One check is a single Hardcover request, so even hourly is far under the free-plan limit.
+    watch_interval_hours: float = 6
+    # How far back a check looks: catches books Hardcover's librarians only add a few days after release.
+    watch_lookback_days: int = 21
+
 
 settings = Settings()

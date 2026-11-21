@@ -17,8 +17,10 @@
     </nav>
     <form action="/logout" method="post" class="logout"><button type="submit">Log out</button></form>
   </header>
-  {% if notice %}<div class="notice">{{ notice }}</div>{% endif %}
+  {% include "_release_panel.html" %}
+
   <main class="{% block main_class %}{% endblock %}">
+    {% if notice %}<div class="notice">{{ notice }}</div>{% endif %}
     {% block content %}{% endblock %}
   </main>
   {% block scripts %}{% endblock %}

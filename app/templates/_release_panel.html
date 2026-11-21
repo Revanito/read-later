@@ -1,0 +1,44 @@
+{# Top-left notification panel, included from base.html on every logged-in page. Shows the first 3
+   releases, "Show N more" for the rest. Closing it hides it for this browser session only; it comes
+   back next visit, or straight away if a new release turns up (the key is the list of ids). #}
+{% import "_books.html" as ui %}
+{% set rels = new_releases() if request.url.path != '/books/new' else [] %}
+{% if rels %}
+  {% set here = request.url.path ~ ('?' ~ request.url.query if request.url.query else '') %}
+  <button type="button" class="rel-pill" id="rel-pill" hidden>{{ rels | length }} new release{{ 's' if rels | length != 1 }}</button>
+  <aside class="rel-panel" id="rel-panel" data-key="{{ rels | map(attribute='hc_id') | join('-') }}" aria-label="New releases">
+    <div class="rel-head">
+      <strong>New releases</strong>
+      <span class="rel-count">{{ rels | length }}</span>
+      <button type="button" class="rel-close" aria-label="Hide for now" title="Hide for now">&times;</button>
+    </div>
+    <ul class="rel-list">
+      {% for r in rels %}{{ ui.release_item(r, here, extra=loop.index > 3) }}{% endfor %}
+    </ul>
+    <div class="rel-foot">
+      {% if rels | length > 3 %}
+        <button type="button" class="rel-more">Show {{ rels | length - 3 }} more</button>
+      {% endif %}
+      <a href="/books/new">Followed authors &rarr;</a>
+    </div>
+  </aside>
+  <script>
+    (() => {
+      const panel = document.getElementById('rel-panel');
+      const pill = document.getElementById('rel-pill');
+      const KEY = 'rl-releases-hidden';
+      const read = () => { try { return sessionStorage.getItem(KEY); } catch { return null; } };
+      const write = (v) => { try { v ? sessionStorage.setItem(KEY, v) : sessionStorage.removeItem(KEY); } catch {} };
+      const setHidden = (hidden) => { panel.hidden = hidden; if (pill) pill.hidden = !hidden; };
+
+      setHidden(read() === panel.dataset.key);
+      panel.querySelector('.rel-close').addEventListener('click', () => { write(panel.dataset.key); setHidden(true); });
+      if (pill) pill.addEventListener('click', () => { write(null); setHidden(false); });
+      const more = panel.querySelector('.rel-more');
+      if (more) more.addEventListener('click', () => {
+        panel.querySelectorAll('.rel-extra').forEach((li) => li.hidden = false);
+        more.remove();
+      });
+    })();
+  </script>
+{% endif %}

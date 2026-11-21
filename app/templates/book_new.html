@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% import "_books.html" as ui %}
+{% block title %}New releases - read-later{% endblock %}
+{% block content %}
+  <a class="back" href="/books">&larr; Books</a>
+  <h2 class="page-title">New releases</h2>
+  <p class="meta">
+    New books by authors you follow, and new entries in series you imported from Hardcover.
+    {% if status.last_check_at %}Last checked {{ status.last_check_at[:16] | replace('T', ' ') }} UTC.{% else %}Not checked yet.{% endif %}
+  </p>
+  {% if status.last_error %}<div class="notice notice-error">Last check failed: {{ status.last_error }}</div>{% endif %}
+  {% for e in errors %}<div class="notice notice-error">{{ e }}</div>{% endfor %}
+
+  <form action="/books/new/check" method="post" class="actions" onsubmit="this.querySelector('button').disabled = true;">
+    <button type="submit"{% if not hardcover_enabled %} disabled title="Needs HARDCOVER_TOKEN"{% endif %}>Check now</button>
+  </form>
+
+  {% if releases %}
+    <ul class="rel-list rel-list-page">
+      {% for r in releases %}{{ ui.release_item(r, '/books/new') }}{% endfor %}
+    </ul>
+  {% else %}
+    <p class="empty">Nothing new right now.</p>
+  {% endif %}
+
+  <h3 class="section-title">Authors you follow</h3>
+  {% if not followed %}<p class="meta">None yet. Follow someone from a book or series page, or below.</p>{% endif %}
+  <div class="tags">
+    {% for a in followed %}
+      <form action="/books/unfollow" method="post">
+        <input type="hidden" name="hc_id" value="{{ a['hc_id'] }}">
+        <button type="submit" class="follow-btn following" title="Click to stop following">&check; {{ a['name'] }}</button>
+      </form>
+    {% endfor %}
+  </div>
+
+  <form action="/books/new" method="get" class="book-search follow-search">
+    <input type="search" name="pick" value="{{ pick }}" placeholder="Find an author to follow..." {% if not hardcover_enabled %}disabled{% endif %}>
+    <button type="submit"{% if not hardcover_enabled %} disabled{% endif %}>Find</button>
+  </form>
+  {% if pick %}
+    {% if not candidates and not errors %}<p class="meta">No Hardcover author matches “{{ pick }}”.</p>{% endif %}
+    <div class="hit-grid">
+      {% for c in candidates %}
+        <div class="hit">
+          <div class="hit-body">
+            <div class="hit-title">{{ c.name }}</div>
+            <div class="meta">{{ c.books_count }} book{{ 's' if c.books_count != 1 }}{% if c.series_names %} &middot; {{ c.series_names | join(', ') }}{% endif %}</div>
+            {% if c.books %}<div class="meta sample">{{ c.books | join(' · ') }}</div>{% endif %}
+            <form action="/books/follow" method="post">
+              <input type="hidden" name="hc_id" value="{{ c.hc_id }}">
+              <input type="hidden" name="name" value="{{ c.name }}">
+              <input type="hidden" name="slug" value="{{ c.slug }}">
+              <button type="submit" class="btn-small btn-accent">+ Follow</button>
+            </form>
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  {% endif %}
+
+  {% if suggestions and hardcover_enabled %}
+    <h3 class="section-title">Authors in your library</h3>
+    <div class="follow-row">
+      {% for name in suggestions %}
+        <form action="/books/follow" method="post">
+          <input type="hidden" name="name" value="{{ name }}">
+          <button type="submit" class="follow-btn">+ {{ name }}</button>
+        </form>
+      {% endfor %}
+    </div>
+  {% endif %}
+
+  <h3 class="section-title">Series watched automatically</h3>
+  {% if series %}
+    <p class="meta">Every series you imported or linked from Hardcover. New entries show up even if you don't follow the author, so you get new Heresy books without following every Black Library writer.</p>
+    <div class="tags">
+      {% for s in series %}<a class="tag tag-link" href="/books/series/{{ s['id'] }}">{{ s['name'] }}</a>{% endfor %}
+    </div>
+  {% else %}
+    <p class="meta">None yet. Import a series from Hardcover and it's watched automatically.</p>
+  {% endif %}
+{% endblock %}

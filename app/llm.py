@@ -27,7 +27,7 @@ async def complete(prompt: str, model: str) -> str:
             resp = await client.post(url, headers=headers, json=body)
             resp.raise_for_status()
         except httpx.HTTPError as exc:
-            raise LLMError(f"1min.ai request failed: {exc or type(exc).__name__}") from exc
+            raise LLMError(f"1min.ai request failed: {str(exc) or type(exc).__name__}") from exc
 
     try:
         data = resp.json()

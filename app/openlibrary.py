@@ -63,7 +63,7 @@ async def _search(params: dict) -> list[dict]:
             resp.raise_for_status()
             docs = resp.json().get("docs", [])
         except (httpx.HTTPError, ValueError) as exc:
-            raise OpenLibraryError(f"Open Library request failed: {exc or type(exc).__name__}") from exc
+            raise OpenLibraryError(f"Open Library request failed: {str(exc) or type(exc).__name__}") from exc
     return [_to_hit(d) for d in docs]
 
 

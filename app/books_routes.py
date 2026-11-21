@@ -2,16 +2,19 @@
 "recommend similar"."""
 import asyncio
 import logging
+from datetime import date
 from urllib.parse import quote
 
 from fastapi import APIRouter, Form
 from fastapi.requests import Request
 from fastapi.responses import JSONResponse, RedirectResponse
 
+import auth
 import books_db
 import hardcover
 import openlibrary
 import recommender
+import watcher
 from web import templates
 
 log = logging.getLogger("books")
@@ -20,7 +23,9 @@ router = APIRouter(prefix="/books")
 
 def _redirect(url: str, notice: str = "") -> RedirectResponse:
     if notice:
-        url += ("&" if "?" in url else "?") + "notice=" + quote(notice)
+        # The query string has to go before any #fragment, or the notice never reaches the server.
+        path, hash_, fragment = url.partition("#")
+        url = path + ("&" if "?" in path else "?") + "notice=" + quote(notice) + hash_ + fragment
     return RedirectResponse(url, status_code=303)
 
 
@@ -157,6 +162,70 @@ async def import_series(hc_id: str = Form(...)):
     msg = f"Imported {added} book{'s' if added != 1 else ''} from Hardcover." if not local else \
         f"Synced with Hardcover: {added} new book{'s' if added != 1 else ''}."
     return _redirect(f"/books/series/{series_id}", msg)
+
+
+# --- new releases & following ---------------------------------------------------------------------
+
+@router.get("/new")
+async def new_releases_page(request: Request, pick: str = "", notice: str = ""):
+    followed = books_db.followed_authors()
+    followed_norm = {books_db.norm_name(a["name"]) for a in followed}
+    ctx = {
+        "tab": "books", "notice": notice, "followed": followed, "pick": pick.strip(), "candidates": [],
+        "errors": [], "series": books_db.linked_series(), "status": watcher.status(),
+        "releases": books_db.active_releases(date.today().isoformat()),
+        "suggestions": [n for n in books_db.library_authors() if books_db.norm_name(n) not in followed_norm][:40],
+    }
+    if ctx["pick"] and hardcover.enabled():
+        try:
+            ctx["candidates"] = await hardcover.search_authors(ctx["pick"])
+        except hardcover.HardcoverError as exc:
+            ctx["errors"].append(str(exc))
+    return templates.TemplateResponse(request, "book_new.html", ctx)
+
+
+@router.post("/new/check")
+async def check_now():
+    result = await watcher.run_check()
+    if result["error"]:
+        return _redirect("/books/new", f"Check failed: {result['error']}")
+    n = result["found"]
+    return _redirect("/books/new", f"Checked. {n} new release{'s' if n != 1 else ''} found." if n else "Checked. Nothing new.")
+
+
+@router.post("/new/{hc_id}/dismiss")
+def dismiss_release(hc_id: int, next: str = Form("/books/new")):
+    books_db.dismiss_release(hc_id)
+    return _redirect(auth.safe_next(next))
+
+
+@router.post("/follow")
+async def follow(name: str = Form(""), hc_id: str = Form(""), slug: str = Form(""), next: str = Form("/books/new")):
+    target = auth.safe_next(next)
+    name = name.strip()
+    if _int_or_none(hc_id):
+        books_db.follow_author(int(hc_id), name or "Unknown author", slug)
+        return _redirect(target, f"Following {name}. You'll see their new books here.")
+    if not name:
+        return _redirect(target)
+    if not hardcover.enabled():
+        return _redirect(target, "Following authors needs Hardcover (HARDCOVER_TOKEN).")
+    try:
+        hits = await hardcover.search_authors(name)
+    except hardcover.HardcoverError as exc:
+        return _redirect(target, f"Couldn't look up {name}: {exc}")
+    exact = [h for h in hits if books_db.norm_name(h["name"]) == books_db.norm_name(name)]
+    if len(exact) >= 1:
+        # Several exact-name hits are usually duplicates; Typesense ranks the real one first.
+        books_db.follow_author(exact[0]["hc_id"], exact[0]["name"], exact[0]["slug"])
+        return _redirect(target, f"Following {exact[0]['name']}. You'll see their new books here.")
+    return _redirect(f"/books/new?pick={quote(name)}", f"No exact match for “{name}”. Pick the right author below.")
+
+
+@router.post("/unfollow")
+def unfollow(hc_id: int = Form(...), next: str = Form("/books/new")):
+    books_db.unfollow_author(hc_id)
+    return _redirect(auth.safe_next(next), "Unfollowed.")
 
 
 # --- series ---------------------------------------------------------------------------------------
@@ -296,6 +365,16 @@ def book_move(book_id: int, direction: str = Form(...)):
     books_db.move_book(book_id, direction)
     b = books_db.get_book(book_id)
     return _redirect(f"/books/series/{b['series_id']}#b{book_id}" if b and b["series_id"] else "/books")
+
+
+@router.post("/book/{book_id}/read-above")
+def book_read_above(book_id: int):
+    b = books_db.get_book(book_id)
+    if b is None or not b["series_id"]:
+        return _redirect("/books")
+    n = books_db.mark_read_before(book_id)
+    msg = f"Marked {n} book{'s' if n != 1 else ''} as read." if n else "Everything above was already read."
+    return _redirect(f"/books/series/{b['series_id']}#b{book_id}", msg)
 
 
 @router.post("/book/{book_id}/edit")
