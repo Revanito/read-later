@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex">
+  <title>Log in - read-later</title>
+  <link rel="icon" type="image/png" href="/static/favicon.png?v={{ favicon_version }}">
+  <link rel="stylesheet" href="/static/style.css?v={{ css_version }}">
+</head>
+<body>
+  <main class="login-page">
+    <form action="/login" method="post" class="card login-card">
+      <h1>read-later</h1>
+      <p class="meta">Private. Enter the password to continue.</p>
+      {% if error %}<p class="form-error">{{ error }}</p>{% endif %}
+      <input type="hidden" name="next" value="{{ next }}">
+      <input type="password" name="password" placeholder="Password" autocomplete="current-password" required autofocus>
+      <button type="submit" class="btn-primary">Log in</button>
+    </form>
+  </main>
+</body>
+</html>

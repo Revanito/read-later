@@ -1,36 +1,92 @@
-import hashlib
+import asyncio
 import logging
 from contextlib import asynccontextmanager
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 from fastapi import FastAPI, Form
 from fastapi.requests import Request
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
 
+import auth
+import books_db
 import db
+from books_routes import router as books_router
 from extractor import ExtractionError, fetch_and_extract
 from summarizer import SummarizeError, summarize
+from web import templates
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("main")
-
-templates = Jinja2Templates(directory="templates")
-# Cache-busts the favicon link so a redeployed icon doesn't stay stuck behind browsers' aggressive
-# favicon caching - same approach as devops-feed-curator.
-_favicon_version = hashlib.sha256(open("static/favicon.png", "rb").read()).hexdigest()[:10]
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     db.init_db()
+    books_db.init_books_db()
     yield
 
 
-app = FastAPI(lifespan=lifespan)
+app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
 app.mount("/static", StaticFiles(directory="static"), name="static")
+app.include_router(books_router)
 
+
+@app.middleware("http")
+async def require_login(request: Request, call_next):
+    if auth.is_public_path(request.url.path) or auth.is_valid_token(request.cookies.get(auth.COOKIE_NAME)):
+        return await call_next(request)
+    target = request.url.path + (f"?{request.url.query}" if request.url.query else "")
+    # A POST from an expired session lands back on the page it came from after logging in, not on the
+    # POST-only URL (which would 405 on a GET).
+    if request.method != "GET":
+        target = auth.safe_next(urlparse(request.headers.get("referer", "")).path or "/")
+    return RedirectResponse(f"/login?next={quote(target, safe='')}", status_code=303)
+
+
+# --- auth -----------------------------------------------------------------------------------------
+
+@app.get("/login")
+def login_page(request: Request, next: str = "/"):
+    if auth.is_valid_token(request.cookies.get(auth.COOKIE_NAME)):
+        return RedirectResponse(auth.safe_next(next), status_code=303)
+    return templates.TemplateResponse(request, "login.html", {"next": auth.safe_next(next), "error": None})
+
+
+@app.post("/login")
+async def login(request: Request, password: str = Form(""), next: str = Form("/")):
+    ip = auth.client_ip(request)
+    target = auth.safe_next(next)
+    if auth.is_locked_out(ip):
+        log.warning("login refused for %s: too many failed attempts", ip)
+        return templates.TemplateResponse(request, "login.html", {
+            "next": target, "error": "Too many failed attempts. Try again in a few minutes.",
+        }, status_code=429)
+    if not auth.check_password(password):
+        auth.record_failure(ip)
+        log.warning("failed login from %s", ip)
+        await asyncio.sleep(1)  # slows down guessing without needing a real rate-limiter
+        return templates.TemplateResponse(request, "login.html", {
+            "next": target, "error": "Wrong password.",
+        }, status_code=401)
+
+    auth.clear_failures(ip)
+    resp = RedirectResponse(target, status_code=303)
+    resp.set_cookie(
+        auth.COOKIE_NAME, auth.make_session_token(),
+        max_age=auth.settings.session_days * 86400, httponly=True, samesite="lax", secure=auth.is_https(request),
+    )
+    return resp
+
+
+@app.post("/logout")
+def logout():
+    resp = RedirectResponse("/login", status_code=303)
+    resp.delete_cookie(auth.COOKIE_NAME)
+    return resp
+
+
+# --- articles -------------------------------------------------------------------------------------
 
 async def _process(id_: str, url: str) -> None:
     try:
@@ -54,7 +110,7 @@ async def _process(id_: str, url: str) -> None:
 
 @app.get("/")
 def index(request: Request):
-    return templates.TemplateResponse("index.html", {"request": request, "favicon_version": _favicon_version})
+    return templates.TemplateResponse(request, "index.html", {"tab": "save"})
 
 
 @app.post("/add")
@@ -72,8 +128,8 @@ async def add(url: str = Form(...)):
 @app.get("/articles")
 def articles(request: Request, archived: bool = False):
     items = db.list_articles(archived=archived)
-    return templates.TemplateResponse("articles.html", {
-        "request": request, "items": items, "archived": archived, "favicon_version": _favicon_version,
+    return templates.TemplateResponse(request, "articles.html", {
+        "tab": "articles", "items": items, "archived": archived,
     })
 
 
@@ -82,7 +138,7 @@ def article(request: Request, id_: str):
     row = db.get_article(id_)
     if row is None:
         return RedirectResponse("/articles", status_code=303)
-    return templates.TemplateResponse("article.html", {"request": request, "a": row, "favicon_version": _favicon_version})
+    return templates.TemplateResponse(request, "article.html", {"tab": "articles", "a": row})
 
 
 @app.post("/articles/{id_}/retry")

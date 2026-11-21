@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% import "_books.html" as ui %}
+{% block title %}Books - read-later{% endblock %}
+{% block main_class %}wide{% endblock %}
+{% block content %}
+  <form action="/books/search" method="get" class="book-search">
+    <input type="search" name="q" placeholder="Search a book, author or series..." required>
+    <select name="type" aria-label="Search for">
+      <option value="book">Books</option>
+      <option value="series"{% if not hardcover_enabled %} disabled{% endif %}>Series{% if not hardcover_enabled %} (needs Hardcover){% endif %}</option>
+    </select>
+    <button type="submit">Search</button>
+  </form>
+
+  <div class="toolbar">
+    <div class="subtabs">
+      <a class="nav-link{% if show == 'active' %} active{% endif %}" href="/books?show=active">In progress</a>
+      <a class="nav-link{% if show == 'all' %} active{% endif %}" href="/books?show=all">Everything</a>
+    </div>
+    <details class="inline-form">
+      <summary class="btn-small">+ New series</summary>
+      <form action="/books/series/new" method="post">
+        <input type="text" name="name" placeholder="Series name" required>
+        <input type="text" name="author" placeholder="Author (optional)">
+        <button type="submit" class="btn-small btn-accent">Create</button>
+      </form>
+    </details>
+  </div>
+
+  <h2 class="section-title">Series</h2>
+  {% if not series_list %}
+    <p class="empty">
+      {% if show == 'active' %}No series in progress.{% else %}No series yet.{% endif %}
+      Search for one above{% if hardcover_enabled %} (pick “Series” to import a whole read order){% endif %}.
+    </p>
+  {% endif %}
+  <div class="series-grid">
+    {% for entry in series_list %}
+      {% set s = entry.series %}
+      <article class="card series-card">
+        <div class="series-head">
+          <div>
+            <h3><a href="/books/series/{{ s['id'] }}">{{ s['name'] }}</a></h3>
+            <div class="meta">{{ s['author'] or 'Unknown author' }}</div>
+          </div>
+          <div class="progress-count">{{ entry.done }}<span>/{{ entry.total }}</span></div>
+        </div>
+        <div class="progress"><span style="width: {{ (100 * entry.done / entry.total) | round | int if entry.total else 0 }}%"></span></div>
+
+        {% if entry.next_up %}
+          {% set b = entry.next_up %}
+          <div class="next-up">
+            <a href="/books/book/{{ b['id'] }}">{{ ui.cover(b['cover_url'], b['title'], 'sm') }}</a>
+            <div class="next-up-body">
+              <div class="eyebrow">{{ 'Reading now' if b['status'] == 'reading' else 'Next up' }}</div>
+              <a class="next-title" href="/books/book/{{ b['id'] }}">{{ b['title'] }}</a>
+              {% if b['position_label'] %}<span class="meta">#{{ b['position_label'] }}</span>{% endif %}
+            </div>
+            <form action="/books/book/{{ b['id'] }}/status" method="post">
+              <input type="hidden" name="next" value="/books?show={{ show }}">
+              {% if b['status'] == 'reading' %}
+                <input type="hidden" name="status" value="read">
+                <button type="submit" class="btn-small btn-accent">Finished</button>
+              {% else %}
+                <input type="hidden" name="status" value="reading">
+                <button type="submit" class="btn-small">Start</button>
+              {% endif %}
+            </form>
+          </div>
+        {% elif entry.books %}
+          <div class="meta done-line">All caught up.</div>
+        {% else %}
+          <div class="meta done-line">No books yet. <a href="/books/search?series_id={{ s['id'] }}">Add some</a>.</div>
+        {% endif %}
+
+        {% if entry.books %}
+          <ol class="cover-strip" aria-label="Read order">
+            {% for b in entry.books %}
+              <li class="st-{{ b['status'] }}" title="{{ loop.index }}. {{ b['title'] }} ({{ STATUSES[b['status']] }})">
+                <a href="/books/book/{{ b['id'] }}">{{ ui.cover(b['cover_url'], b['title'], 'xs') }}</a>
+              </li>
+            {% endfor %}
+          </ol>
+        {% endif %}
+      </article>
+    {% endfor %}
+  </div>
+
+  <h2 class="section-title">Standalone books</h2>
+  {% if not standalone %}
+    <p class="empty">{% if show == 'active' %}Nothing on the pile.{% else %}No standalone books yet.{% endif %}</p>
+  {% endif %}
+  <div class="book-rows">
+    {% for b in standalone %}
+      <div class="book-row">
+        <a href="/books/book/{{ b['id'] }}">{{ ui.cover(b['cover_url'], b['title'], 'sm') }}</a>
+        <div class="book-row-body">
+          <a class="next-title" href="/books/book/{{ b['id'] }}">{{ b['title'] }}</a>
+          <div class="meta">{{ b['author'] or 'Unknown author' }}{% if b['year'] %} &middot; {{ b['year'] }}{% endif %}</div>
+        </div>
+        {{ ui.status_select(b, '/books?show=' ~ show) }}
+      </div>
+    {% endfor %}
+  </div>
+{% endblock %}

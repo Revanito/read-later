@@ -13,9 +13,9 @@ On the app host:
 ```
 git clone https://github.com/Revanito/read-later.git
 cd read-later
-cp .env.example .env   # fill in ONE_MIN_API_KEY
+cp .env.example .env   # fill in ONE_MIN_API_KEY + APP_PASSWORD (HARDCOVER_TOKEN optional)
 docker compose up -d --build
-curl -s localhost:8086 | head -5   # sanity check it's actually serving
+curl -sI localhost:8086/login | head -1   # sanity check: expect HTTP/1.1 200 OK
 ```
 
 (Adjust the port here and in `nginx-reverse-proxy.conf` to whatever you map in `docker-compose.yml`.)
@@ -51,5 +51,5 @@ This rewrites the vhost in place to add the 443/TLS server block and an http→h
 curl -I https://later.vaultinc.fr
 ```
 
-Should return `200 OK` from FastAPI, not nginx's default page or a 502 (502 means nginx can't reach the
+Should return a `303 See Other` redirect to `/login` from FastAPI (the app is password-protected), not nginx's default page or a 502 (502 means nginx can't reach the
 app host on the expected port — check the container is up and no firewall rule is blocking it).

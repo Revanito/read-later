@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Link {{ s['name'] }} - read-later{% endblock %}
+{% block content %}
+  <a class="back" href="/books/series/{{ s['id'] }}">&larr; {{ s['name'] }}</a>
+  <h2 class="page-title">Link to a Hardcover series</h2>
+  <p class="meta">Pick the matching series. Its books get merged in: ones you already have are matched by title, missing ones go to the end of your read order.</p>
+
+  <form action="/books/series/{{ s['id'] }}/link" method="get" class="book-search">
+    <input type="search" name="q" value="{{ q }}" required>
+    <button type="submit">Search</button>
+  </form>
+  {% for e in errors %}<div class="notice notice-error">{{ e }}</div>{% endfor %}
+  {% if not hits and not errors %}<p class="empty">No Hardcover series matched “{{ q }}”.</p>{% endif %}
+
+  {% for h in hits %}
+    <div class="card">
+      <h3>{{ h.name }}</h3>
+      <div class="meta">{{ h.author or 'Unknown author' }} &middot; {{ h.books_count }} book{{ 's' if h.books_count != 1 }}</div>
+      {% if h.sample_titles %}<div class="meta sample">{{ h.sample_titles | join(' · ') }}</div>{% endif %}
+      <form action="/books/series/{{ s['id'] }}/link" method="post" class="actions">
+        <input type="hidden" name="hc_id" value="{{ h.hc_id }}">
+        <button type="submit">Link &amp; import</button>
+      </form>
+    </div>
+  {% endfor %}
+{% endblock %}

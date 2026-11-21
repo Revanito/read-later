@@ -1,22 +1,8 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>read-later</title>
-  <link rel="icon" type="image/png" href="/static/favicon.png?v={{ favicon_version }}">
-  <link rel="stylesheet" href="/static/style.css">
-</head>
-<body>
-  <header>
-    <h1><a href="/">read-later</a></h1>
-    <a class="nav-link" href="/articles">Articles</a>
-  </header>
-  <main class="add-page">
-    <form action="/add" method="post" class="add-form">
-      <input type="url" name="url" placeholder="Paste a link..." required autofocus>
-      <button type="submit">Save &amp; summarize</button>
-    </form>
-  </main>
-</body>
-</html>
+{% extends "base.html" %}
+{% block main_class %}add-page{% endblock %}
+{% block content %}
+  <form action="/add" method="post" class="add-form">
+    <input type="url" name="url" placeholder="Paste a link..." required autofocus>
+    <button type="submit">Save &amp; summarize</button>
+  </form>
+{% endblock %}

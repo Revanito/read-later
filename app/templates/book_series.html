@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+{% import "_books.html" as ui %}
+{% block title %}{{ s['name'] }} - read-later{% endblock %}
+{% block content %}
+  <a class="back" href="/books">&larr; Books</a>
+  <section class="card">
+    <div class="series-head">
+      <div>
+        <h2 class="page-title">{{ s['name'] }}</h2>
+        <div class="meta">
+          {{ s['author'] or 'Unknown author' }}
+          {% if s['hc_slug'] %} &middot; <a href="https://hardcover.app/series/{{ s['hc_slug'] }}" target="_blank" rel="noopener">Hardcover</a>{% endif %}
+        </div>
+      </div>
+      <div class="progress-count">{{ done }}<span>/{{ total }}</span></div>
+    </div>
+    <div class="progress"><span style="width: {{ (100 * done / total) | round | int if total else 0 }}%"></span></div>
+    {% if s['notes'] %}<p class="summary">{{ s['notes'] }}</p>{% endif %}
+
+    <div class="actions">
+      <a class="button" href="/books/search?series_id={{ s['id'] }}">+ Add book</a>
+      {% if hardcover_enabled %}
+        <form action="/books/series/{{ s['id'] }}/sync" method="post">
+          <button type="submit">{{ 'Sync from Hardcover' if s['hc_id'] else 'Link to Hardcover' }}</button>
+        </form>
+      {% endif %}
+      <form action="/books/series/{{ s['id'] }}/reset-order" method="post"
+            onsubmit="return confirm('Re-sort by series number (#1, #2...)? Your custom order will be replaced.');">
+        <button type="submit">Reset to series order</button>
+      </form>
+    </div>
+  </section>
+
+  <h3 class="section-title">Read order <span class="meta">drag to rearrange, or use the arrows</span></h3>
+  {% if not books %}
+    <p class="empty">No books yet. <a href="/books/search?series_id={{ s['id'] }}">Search for one</a>.</p>
+  {% endif %}
+  <ol class="read-order" data-series="{{ s['id'] }}">
+    {% for b in books %}
+      <li class="order-row st-{{ b['status'] }}" id="b{{ b['id'] }}" data-id="{{ b['id'] }}" draggable="true">
+        <span class="handle" aria-hidden="true">&#x2807;</span>
+        <span class="order-num">{{ loop.index }}</span>
+        <a href="/books/book/{{ b['id'] }}">{{ ui.cover(b['cover_url'], b['title'], 'sm') }}</a>
+        <div class="order-body">
+          <a class="next-title" href="/books/book/{{ b['id'] }}">{{ b['title'] }}</a>
+          <div class="meta">
+            {% if b['position_label'] %}#{{ b['position_label'] }}{% endif %}
+            {% if b['year'] %}{% if b['position_label'] %} &middot; {% endif %}{{ b['year'] }}{% endif %}
+          </div>
+        </div>
+        {{ ui.status_select(b, '/books/series/' ~ s['id'] ~ '#b' ~ b['id']) }}
+        <div class="move-btns">
+          <form action="/books/book/{{ b['id'] }}/move" method="post">
+            <input type="hidden" name="direction" value="up">
+            <button type="submit" aria-label="Move up"{% if loop.first %} disabled{% endif %}>&uarr;</button>
+          </form>
+          <form action="/books/book/{{ b['id'] }}/move" method="post">
+            <input type="hidden" name="direction" value="down">
+            <button type="submit" aria-label="Move down"{% if loop.last %} disabled{% endif %}>&darr;</button>
+          </form>
+        </div>
+      </li>
+    {% endfor %}
+  </ol>
+
+  {% if subjects %}
+    <h3 class="section-title">Browse similar subjects</h3>
+    {{ ui.subject_chips(subjects) }}
+  {% endif %}
+
+  {{ ui.recs_block(recs, '/books/series/' ~ s['id'] ~ '/recommend') }}
+
+  <details class="card danger-zone">
+    <summary>Edit series</summary>
+    <form action="/books/series/{{ s['id'] }}/edit" method="post" class="stack-form">
+      <label>Name <input type="text" name="name" value="{{ s['name'] }}" required></label>
+      <label>Author <input type="text" name="author" value="{{ s['author'] or '' }}"></label>
+      <label>Notes <textarea name="notes" rows="3" placeholder="e.g. read the novellas after book 3">{{ s['notes'] or '' }}</textarea></label>
+      <button type="submit" class="btn-small btn-accent">Save</button>
+    </form>
+    <form action="/books/series/{{ s['id'] }}/delete" method="post"
+          onsubmit="return confirm('Delete this series and all {{ books | length }} of its books?');">
+      <button type="submit" class="btn-small btn-danger">Delete series and its books</button>
+    </form>
+  </details>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // Drag-and-drop reordering. The arrow buttons still work without JS (and on touch screens, where
+  // native HTML5 drag doesn't fire).
+  (() => {
+    const list = document.querySelector('.read-order');
+    if (!list) return;
+    let dragging = null;
+
+    list.addEventListener('dragstart', (e) => {
+      dragging = e.target.closest('.order-row');
+      if (!dragging) return;
+      dragging.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+    });
+
+    list.addEventListener('dragover', (e) => {
+      if (!dragging) return;
+      e.preventDefault();
+      const over = e.target.closest('.order-row');
+      if (!over || over === dragging) return;
+      const rect = over.getBoundingClientRect();
+      const after = e.clientY > rect.top + rect.height / 2;
+      over.parentNode.insertBefore(dragging, after ? over.nextSibling : over);
+    });
+
+    list.addEventListener('dragend', async () => {
+      if (!dragging) return;
+      dragging.classList.remove('dragging');
+      dragging = null;
+      const rows = [...list.querySelectorAll('.order-row')];
+      rows.forEach((row, i) => {
+        row.querySelector('.order-num').textContent = i + 1;
+        row.querySelector('button[aria-label="Move up"]').disabled = i === 0;
+        row.querySelector('button[aria-label="Move down"]').disabled = i === rows.length - 1;
+      });
+      const resp = await fetch(`/books/series/${list.dataset.series}/order`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ids: rows.map((r) => Number(r.dataset.id))}),
+      });
+      if (!resp.ok) location.reload();
+    });
+  })();
+</script>
+{% endblock %}

@@ -1,10 +1,26 @@
 # read-later
 
-A personal read-later app: paste a link, it fetches the page, extracts the article text, and summarizes
-it (summary + key points + tags) via a shared [1min.ai](https://1min.ai) proxy. No Discord bot (yet?), no
-browser extension (also yet?) - just a web form and a feed of summaries.
+A private, password-protected reading hub with two halves:
 
-## How it works
+- **Articles**: paste a link, it fetches the page, extracts the article text, and summarizes it (summary +
+  key points + tags) via a shared [1min.ai](https://1min.ai) proxy.
+- **Books**: track the book series you're reading in your own read order, search
+  [Open Library](https://openlibrary.org) and [Hardcover](https://hardcover.app), browse by subject, and
+  get AI "more like this" picks.
+
+No Discord bot, no browser extension. Just a web app behind one password.
+
+## Login
+
+Everything except `/login` and `/static/` sits behind a single password (`APP_PASSWORD`). Logging in sets
+an HMAC-signed session cookie (`HttpOnly`, `SameSite=Lax`, `Secure` when served over HTTPS) valid for
+`SESSION_DAYS`. After 5 wrong passwords from one IP within 15 minutes, that IP is locked out until the
+oldest failure ages out. The app refuses to start without `APP_PASSWORD`, so a missing `.env` line can't
+leave it open.
+
+Changing `APP_PASSWORD` logs out every existing session (unless you set your own `SECRET_KEY`).
+
+## Articles: how it works
 
 1. Paste a URL into the box on `/`.
 
@@ -18,27 +34,78 @@ browser extension (also yet?) - just a web form and a feed of summaries.
 
 Failed extractions/summaries are stored with a `failed` status and can be retried from the article page.
 
+## Books: how it works
+
+`/books` shows every series as a card with your progress (`4/9`), the next unread book with a one-click
+**Start** / **Finished** button, and a strip of covers in read order. Standalone books are listed below.
+"In progress" hides series you've finished; "Everything" shows them all.
+
+**Where the data comes from:**
+
+| Source | Used for | Needs |
+|---|---|---|
+| Open Library | book search, covers, subjects, subject browse | nothing (keyless) |
+| Hardcover | series search, importing a whole series with its numbering, syncing a series later | `HARDCOVER_TOKEN` |
+
+Open Library has no reliable series data, so without a Hardcover token you build series by hand (create a
+series, then add books to it from search). With a token, search for a series (pick **Series** next to the
+search box) and **Import series + read order** pulls every book in. Hardcover filters out merged
+duplicates, partial editions and compilations, the same way its own series pages do.
+
+**Read order is yours.** Imported series start in series-number order, but you can drag rows (or use the
+↑/↓ buttons, which also work on phones) to read prequels, novellas or chronological order however you
+like. **Reset to series order** re-sorts by the `#` numbers. **Sync from Hardcover** adds books that came
+out since you imported, appended to the end of your order. A manual series can be linked to Hardcover
+later. Its existing books are matched by title, so nothing gets duplicated.
+
+Each book has a status: *To read*, *Reading*, *Read* (records the finish date) or *Skipping* (excluded from
+progress counts, handy for novellas you don't care about).
+
+**Finding similar books:**
+
+- Click any subject chip (e.g. *Space opera*) to browse top-rated Open Library books with that subject.
+  Free, no LLM involved.
+- **Recommend similar (AI)** on a series or book page asks the model (`MODEL_RECOMMENDER`) for 6 picks,
+  given the seed and a list of what's already in your library so it doesn't suggest those. Results are
+  cached per series/book. They're only regenerated when you click **Refresh AI picks**, so viewing the page
+  costs no credits. Each pick has a **Find** link that runs a search for it. The prompt lives in
+  `app/prompts/recommender_system_prompt.txt` (bind-mounted, editable without a rebuild).
+
+### Getting a Hardcover token
+
+1. Create a free account on [hardcover.app](https://hardcover.app).
+2. Settings → **Hardcover API** → **New API Key**.
+3. Tick only the **`read:catalog`** scope. That's all this app needs, and it can't touch your Hardcover
+   library or account.
+4. Paste it into `.env` as `HARDCOVER_TOKEN=...` (with or without the `Bearer ` prefix) and recreate the
+   container.
+
+The free plan allows 60 requests/minute and 5,000/day. A search costs 1 request, a series import or sync
+costs 1.
+
 ## Stack
 
-FastAPI (async) + httpx + SQLite + Jinja2 templates, no JS framework. Dockerized.
+FastAPI (async) + httpx + SQLite + Jinja2 templates, no JS framework (a few lines of vanilla JS for
+drag-to-reorder). Dockerized.
 
 ## Running locally
 
 ```bash
 cd app
 pip install -r requirements.txt
-cp ../.env.example .env   # fill in ONE_MIN_API_KEY
+cp ../.env.example .env   # fill in ONE_MIN_API_KEY and APP_PASSWORD
 uvicorn main:app --reload
 ```
 
 ## Running with Docker
 
 ```bash
-cp .env.example .env   # fill in ONE_MIN_API_KEY
+cp .env.example .env   # fill in ONE_MIN_API_KEY and APP_PASSWORD
 docker compose up -d --build
 ```
 
-The app listens on port `8086` by default (see `docker-compose.yml`).
+The app listens on port `8086` by default (see `docker-compose.yml`). Books data lives in the same SQLite
+file as articles (`data/read-later.db`). The new tables are created automatically on first start.
 
 ## Exposing it publicly
 
@@ -52,7 +119,12 @@ All settings are environment variables (see `.env.example`):
 | Variable | Default | Notes |
 |---|---|---|
 | `ONE_MIN_API_KEY` | — | required |
+| `APP_PASSWORD` | — | required, the single login password |
+| `SECRET_KEY` | derived from `APP_PASSWORD` | optional, signs session cookies |
+| `SESSION_DAYS` | `30` | how long a login lasts |
+| `HARDCOVER_TOKEN` | empty | optional, enables series search/import (scope `read:catalog`) |
 | `ONE_MIN_BASE_URL` | `https://api.1min.ai` | |
 | `MODEL_SUMMARIZER` | `us.anthropic.claude-haiku-5-5` | any model ID 1min.ai's `chat-with-ai` accepts |
+| `MODEL_RECOMMENDER` | `us.anthropic.claude-haiku-5-5` | used for book recommendations |
 | `DB_PATH` | `/data/read-later.db` | |
 | `MAX_ARTICLE_CHARS` | `20000` | article text is truncated to this before summarizing |

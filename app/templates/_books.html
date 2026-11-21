@@ -1,0 +1,122 @@
+{# Shared pieces for the Books tab. Import with: {% import "_books.html" as ui %} #}
+
+{% macro cover(url, title, size="md") -%}
+  {%- if url -%}
+    <img class="cover cover-{{ size }}" src="{{ url }}" alt="" loading="lazy" referrerpolicy="no-referrer">
+  {%- else -%}
+    <span class="cover cover-{{ size }} cover-blank" aria-hidden="true">{{ (title or '?')[:1] }}</span>
+  {%- endif -%}
+{%- endmacro %}
+
+{% macro status_select(b, next) -%}
+  <form action="/books/book/{{ b['id'] }}/status" method="post" class="status-form">
+    <input type="hidden" name="next" value="{{ next }}">
+    <select name="status" class="status-select status-{{ b['status'] }}" onchange="this.form.requestSubmit()" aria-label="Status">
+      {% for key, label in STATUSES.items() %}
+        <option value="{{ key }}"{% if b['status'] == key %} selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+    <noscript><button type="submit">Set</button></noscript>
+  </form>
+{%- endmacro %}
+
+{% macro subject_chips(subjects) -%}
+  {% if subjects %}
+    <div class="tags">
+      {% for s in subjects %}<a class="tag tag-link" href="/books/subject?s={{ s | urlencode }}">{{ s }}</a>{% endfor %}
+    </div>
+  {% endif %}
+{%- endmacro %}
+
+{# One search/subject result, with an "add" form. `h` is a hit dict from openlibrary.py / hardcover.py. #}
+{% macro hit_card(h, all_series, target_series) -%}
+  <div class="hit">
+    {{ cover(h.cover_url, h.title) }}
+    <div class="hit-body">
+      <div class="hit-title">{{ h.title }}</div>
+      <div class="meta">
+        {{ h.author or 'Unknown author' }}{% if h.year %} &middot; {{ h.year }}{% endif %}
+        &middot; <span class="src src-{{ h.source }}">{{ 'Hardcover' if h.source == 'hc' else 'Open Library' }}</span>
+      </div>
+      {% if h.series %}
+        <div class="meta">#{{ h.series.position or '?' }} in <strong>{{ h.series.name }}</strong></div>
+      {% endif %}
+
+      {% if h.saved_id %}
+        <a class="btn-small" href="/books/book/{{ h.saved_id }}">In your library &rarr;</a>
+      {% else %}
+        <div class="hit-actions">
+          {% if h.series and h.series.hc_id and not h.series.local_id and not target_series %}
+            <form action="/books/import-series" method="post">
+              <input type="hidden" name="hc_id" value="{{ h.series.hc_id }}">
+              <button type="submit" class="btn-small btn-accent">Import whole series</button>
+            </form>
+          {% endif %}
+          <form action="/books/add" method="post" class="add-hit">
+            {% for f in ['title', 'author', 'year', 'cover_url', 'ol_key', 'hc_id', 'hc_slug'] %}
+              <input type="hidden" name="{{ f }}" value="{{ h[f] if h[f] is not none else '' }}">
+            {% endfor %}
+            <input type="hidden" name="subjects" value="{{ h.subjects | join(',') }}">
+            <input type="hidden" name="position" value="{{ h.series.position if h.series else '' }}">
+            {% set preselect = target_series['id'] if target_series else (h.series.local_id if h.series else none) %}
+            <select name="series_id" class="series-pick" aria-label="Series">
+              <option value="">Standalone</option>
+              {% for s in all_series %}
+                <option value="{{ s['id'] }}"{% if preselect == s['id'] %} selected{% endif %}>{{ s['name'] }}</option>
+              {% endfor %}
+              <option value="new">+ New series&hellip;</option>
+            </select>
+            <input type="text" name="new_series" class="new-series" placeholder="Series name" value="{{ h.series.name if h.series else '' }}" hidden>
+            <button type="submit" class="btn-small">{{ 'Add just this book' if h.series and not h.series.local_id and not target_series else 'Add' }}</button>
+          </form>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+{%- endmacro %}
+
+{% macro recs_block(recs, post_url) -%}
+  <section class="card recs" id="recs">
+    <div class="section-head">
+      <h3>More like this</h3>
+      <form action="{{ post_url }}" method="post" onsubmit="this.querySelector('button').disabled=true; this.querySelector('button').textContent='Thinking…';">
+        <button type="submit" class="btn-small" title="Asks the AI model, uses 1min.ai credits">
+          {{ 'Refresh AI picks' if recs else 'Recommend similar (AI)' }}
+        </button>
+      </form>
+    </div>
+    {% if recs and recs['items'] %}
+      <ul class="rec-list">
+        {% for r in recs['items'] %}
+          <li>
+            <div>
+              <strong>{{ r.title }}</strong>{% if r.author %} <span class="meta">by {{ r.author }}</span>{% endif %}
+              <span class="tag">{{ r.type }}</span>
+            </div>
+            {% if r.why %}<div class="meta">{{ r.why }}</div>{% endif %}
+            <a class="btn-link" href="/books/search?q={{ (r.title ~ ' ' ~ r.author) | urlencode }}&type={{ r.type }}">Find &rarr;</a>
+          </li>
+        {% endfor %}
+      </ul>
+      <p class="meta">Generated {{ recs['created_at'][:10] }}.</p>
+    {% elif not recs %}
+      <p class="meta">Browse a subject above for free, or ask the AI for picks that aren't in your library yet.</p>
+    {% else %}
+      <p class="meta">The model didn't return anything usable. Try again.</p>
+    {% endif %}
+  </section>
+{%- endmacro %}
+
+{# Toggle the "new series name" box when "+ New series..." is picked. #}
+{% macro new_series_script() -%}
+<script>
+  document.addEventListener('change', (e) => {
+    if (!e.target.matches('.series-pick')) return;
+    const box = e.target.form.querySelector('.new-series');
+    if (!box) return;
+    box.hidden = e.target.value !== 'new';
+    box.required = e.target.value === 'new';
+    if (!box.hidden) box.focus();
+  });
+</script>
+{%- endmacro %}

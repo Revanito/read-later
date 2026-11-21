@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% import "_books.html" as ui %}
+{% block title %}{{ b['title'] }} - read-later{% endblock %}
+{% block content %}
+  {% if series %}
+    <a class="back" href="/books/series/{{ series['id'] }}#b{{ b['id'] }}">&larr; {{ series['name'] }}</a>
+  {% else %}
+    <a class="back" href="/books">&larr; Books</a>
+  {% endif %}
+
+  <section class="card book-hero">
+    {{ ui.cover(b['cover_url'], b['title'], 'lg') }}
+    <div class="book-hero-body">
+      <h2 class="page-title">{{ b['title'] }}</h2>
+      <div class="meta">{{ b['author'] or 'Unknown author' }}{% if b['year'] %} &middot; {{ b['year'] }}{% endif %}</div>
+      {% if series %}
+        <div class="meta">
+          {% if b['position_label'] %}#{{ b['position_label'] }} in {% else %}Part of {% endif %}
+          <a href="/books/series/{{ series['id'] }}">{{ series['name'] }}</a>
+        </div>
+      {% endif %}
+      <div class="status-row">
+        {{ ui.status_select(b, '/books/book/' ~ b['id']) }}
+        {% if b['finished_at'] %}<span class="meta">finished {{ b['finished_at'][:10] }}</span>{% endif %}
+      </div>
+      {% if b['notes'] %}<p class="summary">{{ b['notes'] }}</p>{% endif %}
+      <div class="meta links">
+        {% if b['hc_slug'] %}<a href="https://hardcover.app/books/{{ b['hc_slug'] }}" target="_blank" rel="noopener">Hardcover</a>{% endif %}
+        {% if b['ol_key'] %}<a href="https://openlibrary.org{{ b['ol_key'] }}" target="_blank" rel="noopener">Open Library</a>{% endif %}
+        <a href="/books/search?q={{ (b['title'] ~ ' ' ~ (b['author'] or '')) | urlencode }}">Find other editions</a>
+      </div>
+    </div>
+  </section>
+
+  {% if subjects %}
+    <h3 class="section-title">Browse similar subjects</h3>
+    {{ ui.subject_chips(subjects) }}
+  {% endif %}
+
+  {{ ui.recs_block(recs, '/books/book/' ~ b['id'] ~ '/recommend') }}
+
+  <details class="card danger-zone">
+    <summary>Edit book</summary>
+    <form action="/books/book/{{ b['id'] }}/edit" method="post" class="stack-form">
+      <label>Title <input type="text" name="title" value="{{ b['title'] }}" required></label>
+      <label>Author <input type="text" name="author" value="{{ b['author'] or '' }}"></label>
+      <div class="form-row">
+        <label>Year <input type="number" name="year" value="{{ b['year'] or '' }}"></label>
+        <label>Series # <input type="text" name="position" value="{{ b['position_label'] or '' }}" placeholder="e.g. 2.5"></label>
+      </div>
+      <label>Notes <textarea name="notes" rows="3">{{ b['notes'] or '' }}</textarea></label>
+      <button type="submit" class="btn-small btn-accent">Save</button>
+    </form>
+
+    <form action="/books/book/{{ b['id'] }}/series" method="post" class="stack-form">
+      <label>Series
+        <select name="series_id" class="series-pick">
+          <option value=""{% if not b['series_id'] %} selected{% endif %}>Standalone</option>
+          {% for s in all_series %}
+            <option value="{{ s['id'] }}"{% if b['series_id'] == s['id'] %} selected{% endif %}>{{ s['name'] }}</option>
+          {% endfor %}
+          <option value="new">+ New series&hellip;</option>
+        </select>
+      </label>
+      <input type="text" name="new_series" class="new-series" placeholder="Series name" hidden>
+      <button type="submit" class="btn-small">Move</button>
+    </form>
+
+    <form action="/books/book/{{ b['id'] }}/delete" method="post" onsubmit="return confirm('Remove this book?');">
+      <button type="submit" class="btn-small btn-danger">Remove book</button>
+    </form>
+  </details>
+{% endblock %}
+{% block scripts %}{{ ui.new_series_script() }}{% endblock %}
