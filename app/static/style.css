@@ -553,6 +553,10 @@ main.wide {
 .next-title:hover { color: var(--accent); }
 
 .done-line { margin: 0; }
+.series-done .done-line { color: var(--accent); }
+.rows-after-grid { margin-top: 0.9rem; }
+/* Toolbar now only holds buttons: keep them on the right like before. */
+.toolbar { justify-content: flex-end; }
 .done-line a { color: var(--accent); }
 
 .cover-strip {

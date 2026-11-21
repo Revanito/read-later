@@ -39,7 +39,8 @@ Failed extractions/summaries are stored with a `failed` status and can be retrie
 
 `/books` shows every series as a card with your progress (`4/9`), the next unread book with a one-click
 **Start** / **Finished** button, and a strip of covers in read order. Standalone books are listed below.
-"In progress" hides series you've finished; "Everything" shows them all.
+Finished series (every non-skipped book read) and standalone books marked Read move to an **Already read**
+section at the bottom of the page, with the date you finished.
 
 **Where the data comes from:**
 

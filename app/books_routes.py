@@ -49,16 +49,18 @@ def _mark_saved(hits: list[dict]) -> list[dict]:
 # --- overview -------------------------------------------------------------------------------------
 
 @router.get("")
-def books_home(request: Request, show: str = "active", notice: str = ""):
+def books_home(request: Request, notice: str = ""):
+    # A series is finished once every non-skipped book is read; finished series and read standalone
+    # books move to the "Already read" section at the bottom instead of being hidden.
     series = books_db.list_series()
-    if show == "active":
-        # "Active" hides series you've finished (every non-skipped book read); "all" shows everything.
-        series = [s for s in series if s["total"] == 0 or s["done"] < s["total"]]
+    finished = [s for s in series if s["total"] and s["done"] >= s["total"]]
+    active = [s for s in series if not (s["total"] and s["done"] >= s["total"])]
     standalone = books_db.standalone_books()
-    if show == "active":
-        standalone = [b for b in standalone if b["status"] in ("want", "reading")]
     return templates.TemplateResponse(request, "books.html", {
-        "tab": "books", "series_list": series, "standalone": standalone, "show": show, "notice": notice,
+        "tab": "books", "notice": notice,
+        "series_list": active, "finished_series": finished,
+        "standalone": [b for b in standalone if b["status"] != "read"],
+        "read_standalone": [b for b in standalone if b["status"] == "read"],
     })
 
 
