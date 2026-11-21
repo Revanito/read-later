@@ -112,8 +112,10 @@ async def _process(id_: str, url: str) -> None:
 
 
 @app.get("/")
-def index(request: Request):
-    return templates.TemplateResponse(request, "index.html", {"tab": "save"})
+def index(request: Request, archived: bool = False):
+    # The article list lives under the "save a link" box; there's no separate Articles tab anymore.
+    items = db.list_articles(archived=archived)
+    return templates.TemplateResponse(request, "index.html", {"tab": "save", "items": items, "archived": archived})
 
 
 @app.post("/add")
@@ -129,26 +131,24 @@ async def add(url: str = Form(...)):
 
 
 @app.get("/articles")
-def articles(request: Request, archived: bool = False):
-    items = db.list_articles(archived=archived)
-    return templates.TemplateResponse(request, "articles.html", {
-        "tab": "articles", "items": items, "archived": archived,
-    })
+def articles(archived: bool = False):
+    # Old bookmarks/links to the former Articles tab land on the home page instead.
+    return RedirectResponse("/?archived=true" if archived else "/", status_code=303)
 
 
 @app.get("/articles/{id_}")
 def article(request: Request, id_: str):
     row = db.get_article(id_)
     if row is None:
-        return RedirectResponse("/articles", status_code=303)
-    return templates.TemplateResponse(request, "article.html", {"tab": "articles", "a": row})
+        return RedirectResponse("/", status_code=303)
+    return templates.TemplateResponse(request, "article.html", {"tab": "save", "a": row})
 
 
 @app.post("/articles/{id_}/retry")
 async def retry(id_: str):
     row = db.get_article(id_)
     if row is None:
-        return RedirectResponse("/articles", status_code=303)
+        return RedirectResponse("/", status_code=303)
     db.upsert_pending(id_, row["url"], row["domain"])
     await _process(id_, row["url"])
     return RedirectResponse(f"/articles/{id_}", status_code=303)
@@ -163,7 +163,7 @@ def mark_read(id_: str):
 @app.post("/articles/{id_}/archive")
 def archive(id_: str):
     db.set_archived(id_, True)
-    return RedirectResponse("/articles", status_code=303)
+    return RedirectResponse("/", status_code=303)
 
 
 @app.post("/articles/{id_}/unarchive")
@@ -175,4 +175,4 @@ def unarchive(id_: str):
 @app.post("/articles/{id_}/delete")
 def delete(id_: str):
     db.delete_article(id_)
-    return RedirectResponse("/articles", status_code=303)
+    return RedirectResponse("/", status_code=303)

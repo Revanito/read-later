@@ -1,8 +1,35 @@
 {% extends "base.html" %}
-{% block main_class %}add-page{% endblock %}
+{% block main_class %}wide{% endblock %}
 {% block content %}
-  <form action="/add" method="post" class="add-form">
+  <form action="/add" method="post" class="add-form home-add">
     <input type="url" name="url" placeholder="Paste a link..." required autofocus>
     <button type="submit">Save &amp; summarize</button>
   </form>
+
+  <div class="subtabs">
+    <a class="nav-link{% if not archived %} active{% endif %}" href="/">Inbox</a>
+    <a class="nav-link{% if archived %} active{% endif %}" href="/?archived=true">Archived</a>
+  </div>
+
+  {% if not items %}
+    <p class="empty">{% if archived %}Nothing archived yet.{% else %}Nothing saved yet. Paste a link above.{% endif %}</p>
+  {% endif %}
+  <div class="article-grid">
+    {% for a in items %}
+      <article class="card article-card">
+        <h2><a href="/articles/{{ a['id'] }}">{{ a['title'] or a['url'] }}</a></h2>
+        <div class="meta">
+          {{ a['domain'] }} &middot; {{ a['added_at'][:10] }}
+          {% if a['read_at'] %} &middot; read{% endif %}
+          {% if a['status'] == 'failed' %}<span class="badge-failed">failed</span>{% endif %}
+        </div>
+        {% if a['summary'] %}<div class="summary">{{ a['summary'] }}</div>{% endif %}
+        {% if a['tags'] %}
+          <div class="tags">
+            {% for t in a['tags'].split(',') %}<span class="tag">{{ t }}</span>{% endfor %}
+          </div>
+        {% endif %}
+      </article>
+    {% endfor %}
+  </div>
 {% endblock %}

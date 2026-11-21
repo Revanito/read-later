@@ -30,7 +30,8 @@ Changing `APP_PASSWORD` logs out every existing session (unless you set your own
    first (it avoids nav/sidebar blocks that trip up density-based extractors on some news sites), falling
    back to [trafilatura](https://github.com/adbar/trafilatura) if that comes back too short.
 3. The extracted text is sent to 1min.ai for summarization (model configurable via `MODEL_SUMMARIZER`).
-4. The result (title, summary, key points, tags, full text) is stored in SQLite and shown on `/articles`.
+4. The result (title, summary, key points, tags, full text) is stored in SQLite and shown as a card in the
+   grid under the link box on the home page (3 columns on desktop; **Inbox** / **Archived** switch above it).
 
 Failed extractions/summaries are stored with a `failed` status and can be retried from the article page.
 

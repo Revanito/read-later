@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}{{ a['title'] or a['url'] }} - read-later{% endblock %}
 {% block content %}
+  <a class="back" href="{{ '/?archived=true' if a['archived'] else '/' }}">&larr; {{ 'Archived' if a['archived'] else 'Saved articles' }}</a>
   <div class="card">
     <h2><a href="{{ a['url'] }}" target="_blank" rel="noopener">{{ a['title'] or a['url'] }}</a></h2>
     <div class="meta">
