@@ -85,6 +85,39 @@ cover, year and series # without overwriting what you typed:
 - **Sync from Hardcover** on the series page matches by title too;
 - the book page has **Look it up now** while it's still unlinked.
 
+### Reading maps
+
+A series can have a **reading map**: its books grouped into sections and arcs joined by lines, like the
+reading-order charts people post for the Horus Heresy or Discworld. The series page then gets three views:
+
+- **Map**: sections top to bottom. *Arc columns* sit side by side; *rows*, *rows with branches*, *single
+  columns* and *any order* groups hold one group each. Clicking a book ticks it (To read → Reading → Read,
+  saved immediately); ↗ opens it. A book gets **Up next** once everything leading into it is read, so a
+  branching series shows one badge per thread you can pick up. Lines you've travelled light up.
+- **List**: the same map as plain lists. If a column section carries a narrative order (presets do), it's
+  shown as one numbered list in that order.
+- **Order**: the classic drag-to-reorder list.
+
+**Presets** (Books → *Reading-map presets*) build a whole map in one go:
+
+| Preset | Source | Titles |
+|---|---|---|
+| The Horus Heresy + Siege of Terra | wasniahC's *Horus Heresy Reading Order – Narrative Arcs* chart (2022-01-12): Act 1, Act 2's 49 entries in 10 arc columns plus anthologies, Act 3; Siege of Terra appended | 97, with dots for the chart's 23 narrative lines and anthology contents on hover |
+| Discworld | character arcs | 41 novels |
+
+Applying one matches books you already have by title and aliases (e.g. *Garro* ↔ *Garro (Parts 1–2)*), also
+pulling them in from related series (anything named like the preset, e.g. a separate *Siege of Terra*
+series) and standalones. Missing titles are created as manual books. Discworld's link themselves to
+Hardcover/Open Library later; the Heresy's novellas and shorts are added without an author, so they don't
+auto-link (fill in the author on a book's page and it will). You can tick
+"mark everything unread". Books in the series the preset doesn't cover land in **Not placed in the map
+yet**, never deleted. Re-applying is safe (no duplicates).
+
+**Any other series:** press **+ Build a reading map** on its page. It starts as one arc with every book;
+the editor lets you add sections and arcs, move books between them, reorder, label them ("#3", "Novella"),
+set rows/indents for branching rows, and add crossover / side-story lines. Sections with *auto-wire* on are
+joined to the previous one automatically.
+
 **Catching up on a long series:** every row on a series page has **✓ Read all above**, which marks
 every earlier book in your read order as Read in one click (skipped books stay skipped).
 

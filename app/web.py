@@ -13,6 +13,7 @@ templates = Jinja2Templates(directory="templates")
 templates.env.globals.update(
     favicon_version=hashlib.sha256(open("static/favicon.png", "rb").read()).hexdigest()[:10],
     css_version=hashlib.sha256(open("static/style.css", "rb").read()).hexdigest()[:10],
+    js_version=hashlib.sha256(open("static/reading-map.js", "rb").read()).hexdigest()[:10],
     hardcover_enabled=hardcover.enabled(),
     STATUSES=books_db.STATUSES,
     # Called from templates: the notification panel and the Follow buttons.

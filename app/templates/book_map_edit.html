@@ -1,0 +1,157 @@
+{% extends "base.html" %}
+{% block title %}Edit map · {{ s['name'] }} - read-later{% endblock %}
+{% block main_class %}wide{% endblock %}
+{% block content %}
+  <a class="back" href="/books/series/{{ s['id'] }}?view=map">&larr; {{ s['name'] }}</a>
+  <h2 class="page-title">Edit reading map</h2>
+  <p class="meta">
+    Sections run top to bottom. <strong>Arc columns</strong> hold several arcs side by side; the other kinds hold one group.
+    With <em>auto-wire</em> on, a section is joined to the one before it (its last book, or every arc's last book, leads in).
+    {% if meta and meta['preset'] %}Built from the <strong>{{ meta['preset'] }}</strong> preset; its own wiring is kept.{% endif %}
+  </p>
+
+  {% set all_groups = [] %}
+  {% for sec in data.sections %}{% for g in sec.groups %}{% set _ = all_groups.append((sec.s, g.g)) %}{% endfor %}{% endfor %}
+
+  {% macro place_select(book_id, current_gid, groups) -%}
+    <form action="/books/series/{{ s['id'] }}/map/place" method="post" class="inline">
+      <input type="hidden" name="book_id" value="{{ book_id }}">
+      <select name="group_id" onchange="this.form.requestSubmit()" aria-label="Move to">
+        <option value="">Not placed</option>
+        {% for sec, g in groups %}
+          <option value="{{ g['id'] }}"{% if g['id'] == current_gid %} selected{% endif %}>
+            {{ sec['name'] }}{% if sec['kind'] == 'cols' %} › {{ g['name'] }}{% endif %}
+          </option>
+        {% endfor %}
+      </select>
+      <noscript><button type="submit">Move</button></noscript>
+    </form>
+  {%- endmacro %}
+
+  {% for sec in data.sections %}
+    {% set sx = sec.s %}
+    <section class="card map-edit-sec" id="sec{{ sx['id'] }}" style="--arc: {{ sx['color'] }}">
+      <form action="/books/map/section/{{ sx['id'] }}/edit" method="post" class="edit-row">
+        <input type="text" name="name" value="{{ sx['name'] }}" aria-label="Section name" class="grow">
+        <select name="kind" aria-label="Kind">
+          {% for k, label in kinds.items() %}
+            {% if (k == 'cols') == (sx['kind'] == 'cols') %}
+              <option value="{{ k }}"{% if k == sx['kind'] %} selected{% endif %}>{{ label }}</option>
+            {% endif %}
+          {% endfor %}
+        </select>
+        <input type="color" name="color" value="{{ sx['color'] }}" aria-label="Colour">
+        <input type="text" name="hint" value="{{ sx['hint'] or '' }}" placeholder="Note (optional)" aria-label="Note" class="grow">
+        <label class="check"><input type="checkbox" name="auto_wire" value="1"{% if sx['auto_wire'] %} checked{% endif %}> auto-wire</label>
+        <button type="submit" class="btn-small">Save</button>
+      </form>
+      <div class="edit-tools">
+        <form action="/books/map/section/{{ sx['id'] }}/move" method="post"><input type="hidden" name="direction" value="up"><button type="submit" class="btn-small" aria-label="Move section up">&uarr;</button></form>
+        <form action="/books/map/section/{{ sx['id'] }}/move" method="post"><input type="hidden" name="direction" value="down"><button type="submit" class="btn-small" aria-label="Move section down">&darr;</button></form>
+        {% if sx['kind'] == 'cols' %}
+          <form action="/books/map/section/{{ sx['id'] }}/add-group" method="post" class="inline">
+            <input type="text" name="name" placeholder="New arc name" aria-label="New arc name">
+            <input type="color" name="color" value="#5b9bd5" aria-label="Arc colour">
+            <button type="submit" class="btn-small btn-accent">+ Arc</button>
+          </form>
+        {% endif %}
+        <form action="/books/map/section/{{ sx['id'] }}/delete" method="post" onsubmit="return confirm('Remove this section? Its books go back to Not placed.');">
+          <button type="submit" class="btn-small btn-danger">Remove section</button>
+        </form>
+      </div>
+
+      <div class="edit-groups">
+        {% for grp in sec.groups %}
+          {% set g = grp.g %}
+          <div class="edit-group" id="grp{{ g['id'] }}" style="--arc: {{ g['color'] }}">
+            {% if sx['kind'] == 'cols' %}
+              <form action="/books/map/group/{{ g['id'] }}/edit" method="post" class="edit-row">
+                <input type="text" name="name" value="{{ g['name'] }}" aria-label="Arc name" class="grow">
+                <input type="color" name="color" value="{{ g['color'] }}" aria-label="Arc colour">
+                <label class="check"><input type="checkbox" name="loose" value="1"{% if g['loose'] %} checked{% endif %}> any order</label>
+                <button type="submit" class="btn-small">Save</button>
+              </form>
+              <div class="edit-tools">
+                <form action="/books/map/group/{{ g['id'] }}/move" method="post"><input type="hidden" name="direction" value="up"><button type="submit" class="btn-small" aria-label="Move arc left">&larr;</button></form>
+                <form action="/books/map/group/{{ g['id'] }}/move" method="post"><input type="hidden" name="direction" value="down"><button type="submit" class="btn-small" aria-label="Move arc right">&rarr;</button></form>
+                <form action="/books/map/group/{{ g['id'] }}/delete" method="post" onsubmit="return confirm('Remove this arc? Its books go back to Not placed.');"><button type="submit" class="btn-small btn-danger">Remove arc</button></form>
+              </div>
+            {% endif %}
+            {% if not grp.entries %}<p class="meta">No books yet. Use “Move to” on a book below.</p>{% endif %}
+            <ol class="edit-entries">
+              {% for en in grp.entries %}
+                <li id="ent{{ en.id }}">
+                  <span class="et">{{ en.title }}</span>
+                  <form action="/books/map/entry/{{ en.id }}/edit" method="post" class="inline">
+                    <input type="text" name="sub" value="{{ en.sub }}" placeholder="Label (#3, Novella…)" aria-label="Label" class="sub-in">
+                    {% if sx['kind'] == 'chains' %}
+                      <input type="number" name="row" value="{{ en.row }}" min="0" aria-label="Row" title="Row" class="num-in">
+                      <input type="number" name="indent" value="{{ en.indent }}" min="0" aria-label="Indent" title="Indent (empty slots before this row)" class="num-in">
+                    {% else %}
+                      <input type="hidden" name="row" value="{{ en.row }}"><input type="hidden" name="indent" value="{{ en.indent }}">
+                    {% endif %}
+                    <button type="submit" class="btn-small">Save</button>
+                  </form>
+                  <form action="/books/map/entry/{{ en.id }}/move" method="post"><input type="hidden" name="direction" value="up"><button type="submit" class="btn-small" aria-label="Move up"{% if loop.first %} disabled{% endif %}>&uarr;</button></form>
+                  <form action="/books/map/entry/{{ en.id }}/move" method="post"><input type="hidden" name="direction" value="down"><button type="submit" class="btn-small" aria-label="Move down"{% if loop.last %} disabled{% endif %}>&darr;</button></form>
+                  {{ place_select(en.book_id, g['id'], all_groups) }}
+                </li>
+              {% endfor %}
+            </ol>
+          </div>
+        {% endfor %}
+      </div>
+    </section>
+  {% endfor %}
+
+  <section class="card" id="add-section">
+    <h3>Add a section</h3>
+    <form action="/books/series/{{ s['id'] }}/map/section" method="post" class="edit-row">
+      <input type="text" name="name" placeholder="e.g. Act 2, Prequels, Novellas" required aria-label="Section name" class="grow">
+      <select name="kind" aria-label="Kind">
+        {% for k, label in kinds.items() %}<option value="{{ k }}">{{ label }}</option>{% endfor %}
+      </select>
+      <input type="color" name="color" value="#d9b26f" aria-label="Colour">
+      <input type="text" name="hint" placeholder="Note (optional)" aria-label="Note" class="grow">
+      <button type="submit" class="btn-small btn-accent">Add section</button>
+    </form>
+  </section>
+
+  <section class="card" id="unplaced">
+    <h3>Not placed <span class="meta">{{ data.unplaced | length }}</span></h3>
+    {% if not data.unplaced %}<p class="meta">Every book in the series is on the map.</p>{% endif %}
+    <ol class="edit-entries">
+      {% for b in data.unplaced %}
+        <li><span class="et">{{ b['title'] }}</span>{{ place_select(b['id'], none, all_groups) }}</li>
+      {% endfor %}
+    </ol>
+  </section>
+
+  <section class="card" id="links">
+    <h3>Crossovers &amp; extra lines</h3>
+    <p class="meta">Lines inside an arc and between sections are drawn for you. Add one here for a side story or a book that continues in another arc.</p>
+    <ul class="edit-links">
+      {% for l in links %}
+        <li>
+          <span>{{ l.from }} &rarr; {{ l.to }} <span class="meta">({{ link_kinds.get(l.kind, l.kind) }})</span></span>
+          <form action="/books/series/{{ s['id'] }}/map/link/{{ l.id }}/delete" method="post"><button type="submit" class="btn-small btn-danger">Remove</button></form>
+        </li>
+      {% endfor %}
+    </ul>
+    <form action="/books/series/{{ s['id'] }}/map/link" method="post" class="edit-row">
+      <select name="from_id" aria-label="From">{% for b in data.books %}<option value="{{ b['id'] }}">{{ b['title'] }}</option>{% endfor %}</select>
+      <span class="meta">&rarr;</span>
+      <select name="to_id" aria-label="To">{% for b in data.books %}<option value="{{ b['id'] }}">{{ b['title'] }}</option>{% endfor %}</select>
+      <select name="kind" aria-label="Line type">{% for k, label in link_kinds.items() %}<option value="{{ k }}">{{ label }}</option>{% endfor %}</select>
+      <button type="submit" class="btn-small btn-accent">Add line</button>
+    </form>
+  </section>
+
+  <details class="card danger-zone">
+    <summary>Remove the reading map</summary>
+    <p class="meta">The books, their order and their statuses stay; only the map goes.</p>
+    <form action="/books/series/{{ s['id'] }}/map/delete" method="post" onsubmit="return confirm('Remove this reading map?');">
+      <button type="submit" class="btn-small btn-danger">Remove map</button>
+    </form>
+  </details>
+{% endblock %}

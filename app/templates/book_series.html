@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% import "_books.html" as ui %}
 {% block title %}{{ s['name'] }} - read-later{% endblock %}
+{% block main_class %}{{ 'wide' if map else '' }}{% endblock %}
 {% block content %}
   <a class="back" href="/books">&larr; Books</a>
   <section class="card">
@@ -14,9 +15,9 @@
         </div>
         {{ ui.follow_buttons(s['author'], '/books/series/' ~ s['id']) }}
       </div>
-      <div class="progress-count">{{ done }}<span>/{{ total }}</span></div>
+      <div class="progress-count" id="map-count">{{ done }}<span>/{{ total }}</span></div>
     </div>
-    <div class="progress"><span style="width: {{ (100 * done / total) | round | int if total else 0 }}%"></span></div>
+    <div class="progress"><span id="map-bar" style="width: {{ (100 * done / total) | round | int if total else 0 }}%"></span></div>
     {% if s['notes'] %}<p class="summary">{{ s['notes'] }}</p>{% endif %}
 
     <div class="actions">
@@ -30,10 +31,40 @@
             onsubmit="return confirm('Re-sort by series number (#1, #2...)? Your custom order will be replaced.');">
         <button type="submit">Reset to series order</button>
       </form>
+      {% if map %}
+        <a class="button" href="/books/series/{{ s['id'] }}/map/edit">Edit reading map</a>
+      {% else %}
+        <form action="/books/series/{{ s['id'] }}/map/start" method="post">
+          <button type="submit" title="Group this series into arcs and sections, with lines between them">+ Build a reading map</button>
+        </form>
+        <a class="button" href="/books/presets?series_id={{ s['id'] }}">Apply a preset</a>
+      {% endif %}
     </div>
     {{ ui.manual_form([], s, author=s['author'], fixed=true) }}
   </section>
 
+  {% if map %}
+    <div class="map-toolbar">
+      <div class="viewtog" role="group" aria-label="View">
+        <button type="button" data-view="map">Map</button>
+        <button type="button" data-view="list">List</button>
+        <button type="button" data-view="order">Order</button>
+      </div>
+      <div class="legend">
+        <span><i></i>reading path</span>
+        <span><i class="dash"></i>side story / crossover</span>
+        <span><b></b>reading</span>
+        <span>faded = read · click a book to tick it · &#8599; opens it</span>
+      </div>
+    </div>
+    <div class="notice notice-error" id="map-notice" hidden></div>
+    <div class="line-legend" id="line-legend"></div>
+    <div class="map-scroll" id="map-scroll"><div class="map" id="map"></div></div>
+    <div class="list-view" id="list-view" hidden></div>
+    <script type="application/json" id="map-data">{{ map | tojson }}</script>
+  {% endif %}
+
+  <div id="order-view"{% if map %} hidden{% endif %}>
   <h3 class="section-title">Read order <span class="meta">drag to rearrange, or use the arrows</span></h3>
   {% if not books %}
     <p class="empty">No books yet. <a href="/books/search?series_id={{ s['id'] }}">Search for one</a>.</p>
@@ -70,6 +101,7 @@
       </li>
     {% endfor %}
   </ol>
+  </div>
 
   {% if subjects %}
     <h3 class="section-title">Browse similar subjects</h3>
@@ -138,4 +170,5 @@
     });
   })();
 </script>
+{% if map %}<script src="/static/reading-map.js?v={{ js_version }}"></script>{% endif %}
 {% endblock %}

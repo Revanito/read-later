@@ -84,6 +84,66 @@ CREATE TABLE IF NOT EXISTS book_recs (
     created_at TEXT NOT NULL,
     PRIMARY KEY (seed_type, seed_id)
 );
+-- Reading maps (see the "reading maps" section below and presets.py).
+CREATE TABLE IF NOT EXISTS map_meta (
+    series_id INTEGER PRIMARY KEY,
+    preset TEXT,
+    col INTEGER NOT NULL DEFAULT 150,
+    created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS map_sections (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    series_id INTEGER NOT NULL,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    kind TEXT NOT NULL,
+    name TEXT NOT NULL,
+    color TEXT NOT NULL,
+    hint TEXT,
+    auto_wire INTEGER NOT NULL DEFAULT 1,
+    exit_book INTEGER
+);
+CREATE TABLE IF NOT EXISTS map_groups (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    section_id INTEGER NOT NULL,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    name TEXT NOT NULL,
+    color TEXT NOT NULL,
+    hint TEXT,
+    loose INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS map_entries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    group_id INTEGER NOT NULL,
+    book_id INTEGER NOT NULL,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    row INTEGER NOT NULL DEFAULT 0,
+    indent INTEGER NOT NULL DEFAULT 0,
+    sub TEXT,
+    lines TEXT,
+    stories TEXT,
+    list_order INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_map_entries_book ON map_entries (book_id);
+CREATE TABLE IF NOT EXISTS map_rows (
+    group_id INTEGER NOT NULL,
+    row INTEGER NOT NULL,
+    PRIMARY KEY (group_id, row)
+);
+CREATE TABLE IF NOT EXISTS map_links (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    series_id INTEGER NOT NULL,
+    from_ref TEXT NOT NULL,
+    to_ref TEXT NOT NULL,
+    kind TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS map_lines (
+    series_id INTEGER NOT NULL,
+    code TEXT NOT NULL,
+    name TEXT NOT NULL,
+    fill TEXT NOT NULL,
+    outline TEXT NOT NULL,
+    PRIMARY KEY (series_id, code)
+);
 """
 
 
@@ -181,6 +241,8 @@ def delete_series(series_id: int) -> None:
         conn.execute("DELETE FROM book_recs WHERE seed_type = 'series' AND seed_id = ?", (series_id,))
         conn.executemany("DELETE FROM book_recs WHERE seed_type = 'book' AND seed_id = ?", [(i,) for i in ids])
         conn.executemany("DELETE FROM lookup_queue WHERE book_id = ?", [(i,) for i in ids])
+        _clear_map(conn, series_id)
+        conn.executemany("DELETE FROM map_entries WHERE book_id = ?", [(i,) for i in ids])
 
 
 def series_books(series_id: int) -> list[sqlite3.Row]:
@@ -331,6 +393,7 @@ def assign_series(book_id: int, series_id: int | None) -> None:
             return
         conn.execute("UPDATE books SET series_id = ?, sort_order = ? WHERE id = ?",
                      (series_id, _next_sort_order(conn, series_id), book_id))
+        _forget_book_in_maps(conn, book_id)
 
 
 def delete_book(book_id: int) -> None:
@@ -338,6 +401,7 @@ def delete_book(book_id: int) -> None:
         conn.execute("DELETE FROM books WHERE id = ?", (book_id,))
         conn.execute("DELETE FROM book_recs WHERE seed_type = 'book' AND seed_id = ?", (book_id,))
         conn.execute("DELETE FROM lookup_queue WHERE book_id = ?", (book_id,))
+        _forget_book_in_maps(conn, book_id)
 
 
 # --- manually added books -------------------------------------------------------------------------
@@ -640,3 +704,474 @@ def save_recs(seed_type: str, seed_id: int, items: list[dict]) -> None:
                ON CONFLICT(seed_type, seed_id) DO UPDATE SET payload = excluded.payload, created_at = excluded.created_at""",
             (seed_type, seed_id, json.dumps(items), _now()),
         )
+
+
+# --- reading maps ---------------------------------------------------------------------------------
+# A series can have a reading map: ordered sections, each holding groups (arc columns for kind "cols",
+# exactly one group otherwise), each group holding entries (books, by row for "chains"). Links wire
+# things together; their refs are "book:<id>", "gate:<section id>" (a section's header),
+# "colsfirst:<section id>" / "colslast:<section id>" (the first/last book of every arc in a cols
+# section). Kinds: seq/rowseq are implied inside groups; stored links are elbow, branch, cross, vdash,
+# toGate, fromGate and logic (not drawn, only decides "Up next").
+
+SECTION_KINDS = {
+    "cols": "Arc columns",
+    "row": "Row (left to right)",
+    "chains": "Rows with branches",
+    "solo": "Single column",
+    "loose": "Any order",
+}
+LINK_KINDS = {"cross": "Crossover (dashed, side to side)", "vdash": "Side story (dashed)", "elbow": "Path (solid)"}
+
+
+def _clear_map(conn: sqlite3.Connection, series_id: int) -> None:
+    sections = [r["id"] for r in conn.execute("SELECT id FROM map_sections WHERE series_id = ?", (series_id,))]
+    for sid in sections:
+        groups = [r["id"] for r in conn.execute("SELECT id FROM map_groups WHERE section_id = ?", (sid,))]
+        conn.executemany("DELETE FROM map_entries WHERE group_id = ?", [(g,) for g in groups])
+        conn.executemany("DELETE FROM map_rows WHERE group_id = ?", [(g,) for g in groups])
+        conn.execute("DELETE FROM map_groups WHERE section_id = ?", (sid,))
+    conn.execute("DELETE FROM map_sections WHERE series_id = ?", (series_id,))
+    conn.execute("DELETE FROM map_links WHERE series_id = ?", (series_id,))
+    conn.execute("DELETE FROM map_lines WHERE series_id = ?", (series_id,))
+    conn.execute("DELETE FROM map_meta WHERE series_id = ?", (series_id,))
+
+
+def _forget_book_in_maps(conn: sqlite3.Connection, book_id: int) -> None:
+    conn.execute("DELETE FROM map_entries WHERE book_id = ?", (book_id,))
+    ref = f"book:{book_id}"
+    conn.execute("DELETE FROM map_links WHERE from_ref = ? OR to_ref = ?", (ref, ref))
+    conn.execute("UPDATE map_sections SET exit_book = NULL WHERE exit_book = ?", (book_id,))
+
+
+def clear_map(series_id: int) -> None:
+    with get_conn() as conn:
+        _clear_map(conn, series_id)
+
+
+def has_map(series_id: int) -> bool:
+    with get_conn() as conn:
+        return conn.execute("SELECT 1 FROM map_sections WHERE series_id = ? LIMIT 1", (series_id,)).fetchone() is not None
+
+
+def set_map_meta(series_id: int, preset: str | None, col: int = 150) -> None:
+    with get_conn() as conn:
+        conn.execute(
+            """INSERT INTO map_meta (series_id, preset, col, created_at) VALUES (?, ?, ?, ?)
+               ON CONFLICT(series_id) DO UPDATE SET preset = excluded.preset, col = excluded.col""",
+            (series_id, preset, col, _now()),
+        )
+
+
+def get_map_meta(series_id: int) -> sqlite3.Row | None:
+    with get_conn() as conn:
+        return conn.execute("SELECT * FROM map_meta WHERE series_id = ?", (series_id,)).fetchone()
+
+
+def set_map_lines(series_id: int, lines: dict) -> None:
+    with get_conn() as conn:
+        conn.execute("DELETE FROM map_lines WHERE series_id = ?", (series_id,))
+        conn.executemany(
+            "INSERT INTO map_lines (series_id, code, name, fill, outline) VALUES (?, ?, ?, ?, ?)",
+            [(series_id, code, v[0], v[1], v[2]) for code, v in lines.items()],
+        )
+
+
+def title_keys(title: str) -> list[str]:
+    """Match keys for a title: normalized, plus the same without a leading "the"."""
+    n = _norm_title(title)
+    return [n, n[4:]] if n.startswith("the ") else [n]
+
+
+def preset_candidates(series_id: int, match_words: list[str]) -> dict[str, list[sqlite3.Row]]:
+    """Books a preset may claim: the target series first, then series whose name contains one of
+    `match_words`, then standalone books. Indexed by title key."""
+    with get_conn() as conn:
+        related = [r["id"] for r in conn.execute("SELECT id, name FROM series")
+                   if r["id"] != series_id and any(w in r["name"].lower() for w in match_words)]
+        rows = list(conn.execute("SELECT * FROM books WHERE series_id = ? ORDER BY sort_order, id", (series_id,)))
+        for sid in related:
+            rows += list(conn.execute("SELECT * FROM books WHERE series_id = ? ORDER BY sort_order, id", (sid,)))
+        rows += list(conn.execute("SELECT * FROM books WHERE series_id IS NULL ORDER BY id"))
+    index: dict[str, list[sqlite3.Row]] = {}
+    for r in rows:
+        for k in title_keys(r["title"]):
+            index.setdefault(k, []).append(r)
+    return index
+
+
+def set_book_series_raw(book_id: int, series_id: int) -> None:
+    with get_conn() as conn:
+        conn.execute("UPDATE books SET series_id = ? WHERE id = ?", (series_id, book_id))
+        _forget_book_in_maps(conn, book_id)
+
+
+def copy_cover(src_id: int, dst_id: int) -> None:
+    with get_conn() as conn:
+        conn.execute(
+            """UPDATE books SET cover_url = COALESCE(NULLIF(cover_url, ''), (SELECT cover_url FROM books WHERE id = ?))
+               WHERE id = ?""", (src_id, dst_id))
+
+
+def mark_unread(book_ids: list[int]) -> None:
+    with get_conn() as conn:
+        conn.executemany("UPDATE books SET status = 'want', finished_at = NULL WHERE id = ?", [(i,) for i in book_ids])
+
+
+def _next_map_order(conn: sqlite3.Connection, table: str, parent_col: str, parent_id: int) -> int:
+    row = conn.execute(f"SELECT MAX(sort_order) AS m FROM {table} WHERE {parent_col} = ?", (parent_id,)).fetchone()
+    return (row["m"] if row["m"] is not None else -1) + 1
+
+
+def create_section(series_id: int, kind: str, name: str, color: str, hint: str = "", auto_wire: bool = True) -> int:
+    with get_conn() as conn:
+        cur = conn.execute(
+            """INSERT INTO map_sections (series_id, sort_order, kind, name, color, hint, auto_wire)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (series_id, _next_map_order(conn, "map_sections", "series_id", series_id), kind,
+             name.strip() or "Untitled", color, hint.strip(), 1 if auto_wire else 0),
+        )
+        return cur.lastrowid
+
+
+def create_group(section_id: int, name: str, color: str, hint: str = "", loose: bool = False) -> int:
+    with get_conn() as conn:
+        cur = conn.execute(
+            "INSERT INTO map_groups (section_id, sort_order, name, color, hint, loose) VALUES (?, ?, ?, ?, ?, ?)",
+            (section_id, _next_map_order(conn, "map_groups", "section_id", section_id), name.strip() or "Untitled",
+             color, hint.strip(), 1 if loose else 0),
+        )
+        return cur.lastrowid
+
+
+def set_row_noseq(group_id: int, row: int) -> None:
+    with get_conn() as conn:
+        conn.execute("INSERT OR IGNORE INTO map_rows (group_id, row) VALUES (?, ?)", (group_id, row))
+
+
+def set_section_exit(section_id: int, book_id: int | None) -> None:
+    with get_conn() as conn:
+        conn.execute("UPDATE map_sections SET exit_book = ? WHERE id = ?", (book_id, section_id))
+
+
+def add_entry(group_id: int, book_id: int, row: int = 0, indent: int = 0, sub: str = "", lines: str = "",
+              stories: str = "", list_order: int | None = None) -> int:
+    with get_conn() as conn:
+        conn.execute("DELETE FROM map_entries WHERE book_id = ?", (book_id,))
+        cur = conn.execute(
+            """INSERT INTO map_entries (group_id, book_id, sort_order, row, indent, sub, lines, stories, list_order)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (group_id, book_id, _next_map_order(conn, "map_entries", "group_id", group_id), row, indent, sub, lines,
+             stories, list_order),
+        )
+        return cur.lastrowid
+
+
+def add_link(series_id: int, from_ref: str, to_ref: str, kind: str) -> None:
+    with get_conn() as conn:
+        conn.execute("INSERT INTO map_links (series_id, from_ref, to_ref, kind) VALUES (?, ?, ?, ?)",
+                     (series_id, from_ref, to_ref, kind))
+
+
+def _map_structure(conn: sqlite3.Connection, series_id: int):
+    sections = conn.execute("SELECT * FROM map_sections WHERE series_id = ? ORDER BY sort_order, id",
+                            (series_id,)).fetchall()
+    out = []
+    for s in sections:
+        groups = []
+        for g in conn.execute("SELECT * FROM map_groups WHERE section_id = ? ORDER BY sort_order, id", (s["id"],)):
+            entries = conn.execute(
+                """SELECT e.* FROM map_entries e JOIN books b ON b.id = e.book_id
+                   WHERE e.group_id = ? AND b.series_id = ? ORDER BY e.row, e.sort_order, e.id""",
+                (g["id"], series_id)).fetchall()
+            noseq = {r["row"] for r in conn.execute("SELECT row FROM map_rows WHERE group_id = ?", (g["id"],))}
+            groups.append({"g": g, "entries": entries, "noseq": noseq})
+        out.append({"s": s, "groups": groups})
+    return out
+
+
+def renumber_from_map(series_id: int) -> None:
+    """Make the plain series order (Order view, "Read all above") follow the map's list order."""
+    with get_conn() as conn:
+        ordered: list[int] = []
+        for sec in _map_structure(conn, series_id):
+            entries = [e for g in sec["groups"] for e in g["entries"]]
+            if sec["s"]["kind"] == "cols" and any(e["list_order"] is not None for e in entries):
+                entries.sort(key=lambda e: (e["list_order"] is None, e["list_order"] or 0))
+            ordered += [e["book_id"] for e in entries if e["book_id"] not in ordered]
+        rest = [r["id"] for r in conn.execute("SELECT id FROM books WHERE series_id = ? ORDER BY sort_order, id",
+                                              (series_id,)) if r["id"] not in set(ordered)]
+        _renumber(conn, ordered + rest)
+
+
+def map_json(series_id: int) -> dict | None:
+    """Everything the series page's map/list views need, as plain JSON."""
+    with get_conn() as conn:
+        structure = _map_structure(conn, series_id)
+        if not structure:
+            return None
+        books = {b["id"]: b for b in conn.execute(
+            "SELECT * FROM books WHERE series_id = ? ORDER BY sort_order, id", (series_id,))}
+        links = conn.execute("SELECT * FROM map_links WHERE series_id = ? ORDER BY id", (series_id,)).fetchall()
+        lines = {r["code"]: [r["name"], r["fill"], r["outline"]]
+                 for r in conn.execute("SELECT * FROM map_lines WHERE series_id = ?", (series_id,))}
+        meta = conn.execute("SELECT * FROM map_meta WHERE series_id = ?", (series_id,)).fetchone()
+
+    def default_sub(b):
+        return f"#{b['position_label']}" if b["position_label"] else (str(b["year"]) if b["year"] else "")
+
+    nodes, placed, sections, sec_index = {}, set(), [], {}
+    for i, sec in enumerate(structure):
+        s = sec["s"]
+        sec_index[s["id"]] = i
+        groups = []
+        for g in sec["groups"]:
+            rows: dict[int, dict] = {}
+            for e in g["entries"]:
+                b = books[e["book_id"]]
+                r = rows.setdefault(e["row"], {"indent": e["indent"], "seq": e["row"] not in g["noseq"], "ids": []})
+                r["ids"].append(b["id"])
+                placed.add(b["id"])
+                nodes[b["id"]] = {
+                    "id": b["id"], "title": b["title"], "status": b["status"], "cover": b["cover_url"] or "",
+                    "sub": e["sub"] or default_sub(b), "lines": (e["lines"] or "").split(),
+                    "stories": [x for x in (e["stories"] or "").split("\n") if x], "o": e["list_order"], "entry": e["id"],
+                }
+            groups.append({"id": g["g"]["id"], "name": g["g"]["name"], "color": g["g"]["color"],
+                           "hint": g["g"]["hint"] or "", "loose": bool(g["g"]["loose"]) or s["kind"] == "loose",
+                           "rows": [rows[k] for k in sorted(rows)] or [{"indent": 0, "seq": True, "ids": []}]})
+        sections.append({"id": s["id"], "kind": s["kind"], "name": s["name"], "color": s["color"], "hint": s["hint"] or "",
+                         "auto": bool(s["auto_wire"]), "exit": s["exit_book"] if s["exit_book"] in placed else None,
+                         "groups": groups})
+
+    unplaced = [b for b in books.values() if b["id"] not in placed]
+    for b in unplaced:
+        nodes[b["id"]] = {"id": b["id"], "title": b["title"], "status": b["status"], "cover": b["cover_url"] or "",
+                          "sub": default_sub(b), "lines": [], "stories": [], "o": None, "entry": None}
+    if unplaced:
+        sections.append({"id": None, "kind": "loose", "name": "Not placed in the map yet", "color": "#7f8a99",
+                         "hint": "Books in this series the map doesn't include. Place them from Edit map, or leave them here.",
+                         "auto": False, "exit": None, "virtual": True,
+                         "groups": [{"id": None, "name": "Not placed in the map yet", "color": "#7f8a99", "hint": "",
+                                     "loose": True, "rows": [{"indent": 0, "seq": False, "ids": [b["id"] for b in unplaced]}]}]})
+
+    def conv(ref: str) -> str | None:
+        kind, _, rest = ref.partition(":")
+        if not rest.isdigit():
+            return None
+        if kind == "book":
+            return f"b:{rest}" if int(rest) in placed else None
+        if int(rest) not in sec_index:
+            return None
+        return f"{kind}:{sec_index[int(rest)]}"
+
+    out_links = []
+    for l in links:
+        a, b = conv(l["from_ref"]), conv(l["to_ref"])
+        if a and b:
+            out_links.append([a, b, l["kind"]])
+
+    # Auto-wiring between consecutive sections (anything built by hand): previous section's exit
+    # feeds the next section's start; arc columns merge into the next section's header.
+    real = [i for i, s in enumerate(sections) if not s.get("virtual") and s["kind"] != "loose"]
+    for prev, cur in zip(real, real[1:]):
+        a, b = sections[prev], sections[cur]
+        if not b["auto"]:
+            continue
+        firsts = ([f"colsfirst:{cur}"] if b["kind"] == "cols"
+                  else [f"b:{b['groups'][0]['rows'][0]['ids'][0]}"] if b["groups"][0]["rows"][0]["ids"] else [])
+        if not firsts:
+            continue
+        if a["kind"] == "cols":
+            out_links.append([f"colslast:{prev}", f"gate:{cur}", "toGate"])
+            out_links += [[f"colslast:{prev}", f, "logic"] for f in firsts]
+        else:
+            ids = [i for g in a["groups"] for r in g["rows"] for i in r["ids"]]
+            exit_id = a["exit"] or (ids[-1] if ids else None)
+            if exit_id is None:
+                continue
+            out_links += [[f"b:{exit_id}", f, "branch"] for f in firsts]
+            out_links += [[f"b:{exit_id}", f, "logic"] for f in firsts]
+
+    return {"series_id": series_id, "col": (meta["col"] if meta else 150), "preset": meta["preset"] if meta else None,
+            "sections": sections, "nodes": nodes, "links": out_links, "lines": lines, "statuses": STATUSES}
+
+
+# --- map editing (manual maps) ----------------------------------------------------------------------
+
+def start_map(series_id: int) -> None:
+    """A first map for a series built by hand: one arc column holding every book in its current order."""
+    with get_conn() as conn:
+        _clear_map(conn, series_id)
+    set_map_meta(series_id, None, 150)
+    sid = create_section(series_id, "cols", "Arcs", "#5ec2a3")
+    gid = create_group(sid, "Main arc", "#5ec2a3")
+    for b in series_books(series_id):
+        add_entry(gid, b["id"])
+
+
+def section_series(section_id: int) -> int | None:
+    with get_conn() as conn:
+        r = conn.execute("SELECT series_id FROM map_sections WHERE id = ?", (section_id,)).fetchone()
+    return r["series_id"] if r else None
+
+
+def group_series(group_id: int) -> int | None:
+    with get_conn() as conn:
+        r = conn.execute("""SELECT s.series_id FROM map_groups g JOIN map_sections s ON s.id = g.section_id
+                            WHERE g.id = ?""", (group_id,)).fetchone()
+    return r["series_id"] if r else None
+
+
+def entry_series(entry_id: int) -> int | None:
+    with get_conn() as conn:
+        r = conn.execute("""SELECT s.series_id FROM map_entries e JOIN map_groups g ON g.id = e.group_id
+                            JOIN map_sections s ON s.id = g.section_id WHERE e.id = ?""", (entry_id,)).fetchone()
+    return r["series_id"] if r else None
+
+
+def add_section(series_id: int, kind: str, name: str, color: str, hint: str = "") -> int:
+    kind = kind if kind in SECTION_KINDS else "row"
+    sid = create_section(series_id, kind, name, color, hint, auto_wire=True)
+    create_group(sid, "New arc" if kind == "cols" else name, color, "", loose=(kind == "loose"))
+    return sid
+
+
+def update_section(section_id: int, name: str, color: str, hint: str, kind: str, auto_wire: bool) -> None:
+    with get_conn() as conn:
+        s = conn.execute("SELECT kind FROM map_sections WHERE id = ?", (section_id,)).fetchone()
+        if s is None:
+            return
+        # Arc-column sections hold several groups, the others exactly one: don't convert between them.
+        if kind not in SECTION_KINDS or (kind == "cols") != (s["kind"] == "cols"):
+            kind = s["kind"]
+        conn.execute("UPDATE map_sections SET name = ?, color = ?, hint = ?, kind = ?, auto_wire = ? WHERE id = ?",
+                     (name.strip() or "Untitled", color, hint.strip(), kind, 1 if auto_wire else 0, section_id))
+        if kind != "cols":
+            conn.execute("UPDATE map_groups SET name = ?, color = ?, loose = ? WHERE section_id = ?",
+                         (name.strip() or "Untitled", color, 1 if kind == "loose" else 0, section_id))
+
+
+def _swap(conn: sqlite3.Connection, table: str, parent_col: str, item_id: int, direction: str) -> None:
+    row = conn.execute(f"SELECT {parent_col} AS p FROM {table} WHERE id = ?", (item_id,)).fetchone()
+    if row is None:
+        return
+    ids = [r["id"] for r in conn.execute(f"SELECT id FROM {table} WHERE {parent_col} = ? ORDER BY sort_order, id",
+                                         (row["p"],))]
+    i = ids.index(item_id)
+    j = i - 1 if direction == "up" else i + 1
+    if 0 <= j < len(ids):
+        ids[i], ids[j] = ids[j], ids[i]
+    conn.executemany(f"UPDATE {table} SET sort_order = ? WHERE id = ?", [(k, x) for k, x in enumerate(ids)])
+
+
+def move_section(section_id: int, direction: str) -> None:
+    with get_conn() as conn:
+        _swap(conn, "map_sections", "series_id", section_id, direction)
+
+
+def delete_section(section_id: int) -> None:
+    with get_conn() as conn:
+        groups = [r["id"] for r in conn.execute("SELECT id FROM map_groups WHERE section_id = ?", (section_id,))]
+        conn.executemany("DELETE FROM map_entries WHERE group_id = ?", [(g,) for g in groups])
+        conn.executemany("DELETE FROM map_rows WHERE group_id = ?", [(g,) for g in groups])
+        conn.execute("DELETE FROM map_groups WHERE section_id = ?", (section_id,))
+        conn.execute("DELETE FROM map_sections WHERE id = ?", (section_id,))
+        refs = [f"{k}:{section_id}" for k in ("gate", "colsfirst", "colslast")]
+        conn.executemany("DELETE FROM map_links WHERE from_ref = ? OR to_ref = ?", [(r, r) for r in refs])
+
+
+def add_group(section_id: int, name: str, color: str) -> int:
+    return create_group(section_id, name, color)
+
+
+def update_group(group_id: int, name: str, color: str, hint: str, loose: bool) -> None:
+    with get_conn() as conn:
+        conn.execute("UPDATE map_groups SET name = ?, color = ?, hint = ?, loose = ? WHERE id = ?",
+                     (name.strip() or "Untitled", color, hint.strip(), 1 if loose else 0, group_id))
+
+
+def move_group(group_id: int, direction: str) -> None:
+    with get_conn() as conn:
+        _swap(conn, "map_groups", "section_id", group_id, direction)
+
+
+def delete_group(group_id: int) -> None:
+    with get_conn() as conn:
+        conn.execute("DELETE FROM map_entries WHERE group_id = ?", (group_id,))
+        conn.execute("DELETE FROM map_rows WHERE group_id = ?", (group_id,))
+        conn.execute("DELETE FROM map_groups WHERE id = ?", (group_id,))
+
+
+def place_book(book_id: int, group_id: int) -> None:
+    """Put a book at the end of a group (moving it out of wherever it was on the map)."""
+    with get_conn() as conn:
+        last = conn.execute("SELECT MAX(row) AS r FROM map_entries WHERE group_id = ?", (group_id,)).fetchone()
+        row = last["r"] or 0
+    add_entry(group_id, book_id, row=row)
+
+
+def unplace_book(book_id: int) -> None:
+    with get_conn() as conn:
+        _forget_book_in_maps(conn, book_id)
+
+
+def move_entry(entry_id: int, direction: str) -> None:
+    with get_conn() as conn:
+        e = conn.execute("SELECT group_id, row FROM map_entries WHERE id = ?", (entry_id,)).fetchone()
+        if e is None:
+            return
+        ids = [r["id"] for r in conn.execute(
+            "SELECT id FROM map_entries WHERE group_id = ? ORDER BY row, sort_order, id", (e["group_id"],))]
+        i = ids.index(entry_id)
+        j = i - 1 if direction == "up" else i + 1
+        if 0 <= j < len(ids):
+            ids[i], ids[j] = ids[j], ids[i]
+        conn.executemany("UPDATE map_entries SET sort_order = ? WHERE id = ?", [(k, x) for k, x in enumerate(ids)])
+
+
+def update_entry(entry_id: int, row: int, indent: int, sub: str) -> None:
+    with get_conn() as conn:
+        conn.execute("UPDATE map_entries SET row = ?, indent = ?, sub = ? WHERE id = ?",
+                     (max(0, row), max(0, indent), sub.strip(), entry_id))
+
+
+def map_links_for_edit(series_id: int) -> list[dict]:
+    """Book-to-book links with titles, for the editor's crossover list."""
+    with get_conn() as conn:
+        rows = conn.execute("SELECT * FROM map_links WHERE series_id = ? AND kind IN ('cross', 'vdash', 'elbow') ORDER BY id",
+                            (series_id,)).fetchall()
+        titles = {r["id"]: r["title"] for r in conn.execute("SELECT id, title FROM books WHERE series_id = ?", (series_id,))}
+    out = []
+    for r in rows:
+        a, b = r["from_ref"].partition(":")[2], r["to_ref"].partition(":")[2]
+        if r["from_ref"].startswith("book:") and r["to_ref"].startswith("book:"):
+            out.append({"id": r["id"], "kind": r["kind"], "from": titles.get(int(a), "?"), "to": titles.get(int(b), "?")})
+    return out
+
+
+def delete_link(link_id: int, series_id: int) -> None:
+    with get_conn() as conn:
+        conn.execute("DELETE FROM map_links WHERE id = ? AND series_id = ?", (link_id, series_id))
+
+
+def map_editor_data(series_id: int) -> dict:
+    """Sections, groups and entries (with book titles) for the map editor page."""
+    with get_conn() as conn:
+        structure = _map_structure(conn, series_id)
+        books = {b["id"]: b for b in conn.execute(
+            "SELECT * FROM books WHERE series_id = ? ORDER BY sort_order, id", (series_id,))}
+    placed = set()
+    sections = []
+    for sec in structure:
+        groups = []
+        for g in sec["groups"]:
+            entries = []
+            for e in g["entries"]:
+                placed.add(e["book_id"])
+                entries.append({"id": e["id"], "book_id": e["book_id"], "title": books[e["book_id"]]["title"],
+                                "row": e["row"], "indent": e["indent"], "sub": e["sub"] or ""})
+            groups.append({"g": g["g"], "entries": entries})
+        sections.append({"s": sec["s"], "groups": groups})
+    unplaced = [b for b in books.values() if b["id"] not in placed]
+    return {"sections": sections, "unplaced": unplaced, "books": list(books.values())}

@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Reading-map presets - read-later{% endblock %}
+{% block content %}
+  <a class="back" href="/books">&larr; Books</a>
+  <h2 class="page-title">Reading-map presets</h2>
+  <p class="meta">A preset builds a series' reading map in one go: arcs, sections and the lines between them. Books you already have are matched by title (and pulled in from related series); the rest are added as manual books. Anything else in the series stays, under “Not placed in the map yet”.</p>
+
+  {% for it in items %}
+    {% set p = it.p %}
+    <section class="card preset-card">
+      <h3>{{ p.name }}</h3>
+      <p class="summary">{{ p.description }}</p>
+      <p class="meta">{{ it.size }} titles</p>
+      <form action="/books/presets/{{ p.key }}/apply" method="post" class="stack-form"
+            onsubmit="return confirm('Apply the {{ p.name }} map? Any reading map the series already has is replaced.');">
+        <label>Apply to
+          <select name="series_id">
+            <option value="new">A new series called “{{ p.name }}”</option>
+            {% set pick = preselect or it.guess %}
+            {% for s in all_series %}
+              <option value="{{ s['id'] }}"{% if pick == s['id'] %} selected{% endif %}>{{ s['name'] }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="check"><input type="checkbox" name="mark_unread" value="1" checked> Mark every book in the map as unread (you tick what you've read afterwards)</label>
+        <button type="submit" class="btn-small btn-accent">Apply preset</button>
+      </form>
+    </section>
+  {% endfor %}
+
+  <section class="card preset-card">
+    <h3>Any other series</h3>
+    <p class="summary">Open the series and press <strong>+ Build a reading map</strong>: it starts as one arc with every book, then you add sections and arcs, move books into them and draw crossovers.</p>
+  </section>
+{% endblock %}

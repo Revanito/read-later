@@ -13,6 +13,7 @@ import auth
 import books_db
 import hardcover
 import openlibrary
+import presets
 import recommender
 import watcher
 from web import templates
@@ -283,7 +284,172 @@ def series_page(request: Request, series_id: int, notice: str = ""):
         "done": sum(1 for b in counted if b["status"] == "read"), "total": len(counted),
         "subjects": books_db.series_subjects(series_id),
         "recs": books_db.get_recs("series", series_id),
+        "map": books_db.map_json(series_id),
     })
+
+
+# --- reading maps: presets ------------------------------------------------------------------------
+
+@router.get("/presets")
+def presets_page(request: Request, series_id: str = "", notice: str = ""):
+    items = [{"p": p, "size": presets.preset_size(p), "guess": presets.guess_target(p)} for p in presets.PRESETS.values()]
+    return templates.TemplateResponse(request, "book_presets.html", {
+        "tab": "books", "items": items, "all_series": books_db.all_series_names(), "notice": notice,
+        "preselect": _int_or_none(series_id),
+    })
+
+
+@router.post("/presets/{key}/apply")
+def apply_preset(key: str, series_id: str = Form("new"), mark_unread: str = Form("")):
+    if key not in presets.PRESETS:
+        return _redirect("/books/presets", "Unknown preset.")
+    target = None if series_id == "new" else _int_or_none(series_id)
+    if target is not None and books_db.get_series(target) is None:
+        return _redirect("/books/presets", "That series no longer exists.")
+    sid, st = presets.apply_preset(key, target, mark_unread=bool(mark_unread))
+    moved = f" ({st['moved']} moved in from other series)" if st["moved"] else ""
+    msg = (f"Reading map applied: {st['matched']} book{'s' if st['matched'] != 1 else ''} matched{moved}, "
+           f"{st['created']} added.")
+    return _redirect(f"/books/series/{sid}?view=map", msg)
+
+
+# --- reading maps: status from the map/list views -------------------------------------------------
+
+@router.post("/book/{book_id}/set-status")
+async def set_status_json(request: Request, book_id: int):
+    try:
+        status = (await request.json()).get("status")
+    except (ValueError, AttributeError):
+        status = None
+    if status not in books_db.STATUSES or books_db.get_book(book_id) is None:
+        return JSONResponse({"ok": False}, status_code=400)
+    books_db.set_status(book_id, status)
+    return {"ok": True, "status": status}
+
+
+# --- reading maps: editor -------------------------------------------------------------------------
+
+def _editor(series_id: int, anchor: str = "", notice: str = "") -> RedirectResponse:
+    return _redirect(f"/books/series/{series_id}/map/edit" + (f"#{anchor}" if anchor else ""), notice)
+
+
+@router.get("/series/{series_id}/map/edit")
+def map_edit_page(request: Request, series_id: int, notice: str = ""):
+    s = books_db.get_series(series_id)
+    if s is None:
+        return _redirect("/books")
+    return templates.TemplateResponse(request, "book_map_edit.html", {
+        "tab": "books", "s": s, "notice": notice, "data": books_db.map_editor_data(series_id),
+        "links": books_db.map_links_for_edit(series_id), "kinds": books_db.SECTION_KINDS,
+        "link_kinds": books_db.LINK_KINDS, "meta": books_db.get_map_meta(series_id),
+    })
+
+
+@router.post("/series/{series_id}/map/start")
+def map_start(series_id: int):
+    if books_db.get_series(series_id) is None:
+        return _redirect("/books")
+    books_db.start_map(series_id)
+    return _editor(series_id, notice="Map started with one arc holding every book. Add sections and arcs, then place books.")
+
+
+@router.post("/series/{series_id}/map/delete")
+def map_delete(series_id: int):
+    books_db.clear_map(series_id)
+    return _redirect(f"/books/series/{series_id}", "Reading map removed. The books are untouched.")
+
+
+@router.post("/series/{series_id}/map/section")
+def map_add_section(series_id: int, kind: str = Form("row"), name: str = Form(""), color: str = Form("#5ec2a3"),
+                    hint: str = Form("")):
+    if books_db.get_series(series_id) is None:
+        return _redirect("/books")
+    if not books_db.has_map(series_id):
+        books_db.set_map_meta(series_id, None, 150)
+    sid = books_db.add_section(series_id, kind, name or "New section", color, hint)
+    return _editor(series_id, f"sec{sid}", "Section added.")
+
+
+@router.post("/map/section/{section_id}/{action}")
+def map_section_action(section_id: int, action: str, name: str = Form(""), color: str = Form("#5ec2a3"),
+                       hint: str = Form(""), kind: str = Form(""), auto_wire: str = Form(""), direction: str = Form("up")):
+    series_id = books_db.section_series(section_id)
+    if series_id is None:
+        return _redirect("/books")
+    if action == "edit":
+        books_db.update_section(section_id, name, color, hint, kind, bool(auto_wire))
+        return _editor(series_id, f"sec{section_id}", "Section saved.")
+    if action == "move":
+        books_db.move_section(section_id, direction)
+        return _editor(series_id, f"sec{section_id}")
+    if action == "delete":
+        books_db.delete_section(section_id)
+        return _editor(series_id, notice="Section removed. Its books are back under “Not placed”.")
+    if action == "add-group":
+        gid = books_db.add_group(section_id, name or "New arc", color)
+        return _editor(series_id, f"grp{gid}", "Arc added.")
+    return _editor(series_id)
+
+
+@router.post("/map/group/{group_id}/{action}")
+def map_group_action(group_id: int, action: str, name: str = Form(""), color: str = Form("#5ec2a3"),
+                     hint: str = Form(""), loose: str = Form(""), direction: str = Form("up")):
+    series_id = books_db.group_series(group_id)
+    if series_id is None:
+        return _redirect("/books")
+    if action == "edit":
+        books_db.update_group(group_id, name, color, hint, bool(loose))
+        return _editor(series_id, f"grp{group_id}", "Arc saved.")
+    if action == "move":
+        books_db.move_group(group_id, direction)
+        return _editor(series_id, f"grp{group_id}")
+    if action == "delete":
+        books_db.delete_group(group_id)
+        return _editor(series_id, notice="Arc removed. Its books are back under “Not placed”.")
+    return _editor(series_id)
+
+
+@router.post("/series/{series_id}/map/place")
+def map_place(series_id: int, book_id: int = Form(...), group_id: str = Form("")):
+    b = books_db.get_book(book_id)
+    if b is None or b["series_id"] != series_id:
+        return _editor(series_id)
+    gid = _int_or_none(group_id)
+    if gid is None:
+        books_db.unplace_book(book_id)
+        return _editor(series_id, "unplaced")
+    if books_db.group_series(gid) != series_id:
+        return _editor(series_id)
+    books_db.place_book(book_id, gid)
+    return _editor(series_id, f"grp{gid}")
+
+
+@router.post("/map/entry/{entry_id}/{action}")
+def map_entry_action(entry_id: int, action: str, direction: str = Form("up"), row: str = Form("0"),
+                     indent: str = Form("0"), sub: str = Form("")):
+    series_id = books_db.entry_series(entry_id)
+    if series_id is None:
+        return _redirect("/books")
+    if action == "move":
+        books_db.move_entry(entry_id, direction)
+    elif action == "edit":
+        books_db.update_entry(entry_id, _int_or_none(row) or 0, _int_or_none(indent) or 0, sub)
+    return _editor(series_id, f"ent{entry_id}")
+
+
+@router.post("/series/{series_id}/map/link")
+def map_add_link(series_id: int, from_id: int = Form(...), to_id: int = Form(...), kind: str = Form("cross")):
+    a, b = books_db.get_book(from_id), books_db.get_book(to_id)
+    if not a or not b or a["series_id"] != series_id or b["series_id"] != series_id or from_id == to_id:
+        return _editor(series_id, "links", "Pick two different books from this series.")
+    books_db.add_link(series_id, f"book:{from_id}", f"book:{to_id}", kind if kind in books_db.LINK_KINDS else "cross")
+    return _editor(series_id, "links", "Link added.")
+
+
+@router.post("/series/{series_id}/map/link/{link_id}/delete")
+def map_delete_link(series_id: int, link_id: int):
+    books_db.delete_link(link_id, series_id)
+    return _editor(series_id, "links", "Link removed.")
 
 
 @router.post("/series/{series_id}/edit")
