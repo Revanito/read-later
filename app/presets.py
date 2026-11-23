@@ -49,7 +49,7 @@ HORUS_HERESY = {
     "key": "horus-heresy",
     "name": "The Horus Heresy + Siege of Terra",
     "description": ("wasniahC's narrative-arcs reading order: Act 1, Act 2's 49 entries in 10 arc columns plus "
-                    "the anthologies, Act 3, then Siege of Terra. 97 titles, with dots for the chart's 23 "
+                    "the anthologies, Act 3, then Siege of Terra. 101 titles, with dots for the chart's 23 "
                     "narrative lines."),
     "match_series": ["horus heresy", "siege of terra"],
     "author": "",
@@ -82,7 +82,8 @@ HORUS_HERESY = {
             {"name": "The Imperium & Knights Errant", "color": "#e6d3a3", "books": [
                 e("Nemesis", _num(13), "IM", o=6), e("The Outcast Dead", _num(17), "KE", o=8),
                 e("Cybernetica", "Novella", "IM", o=15),
-                e("Garro (Parts 1–2)", _num(42, "up to Shield of Lies"), "KE IM", o=28, aliases=["Garro"]),
+                e("Garro (Parts 1–2)", _num(42, "up to Shield of Lies"), "KE IM", o=28,
+                  aliases=["Garro", "Garro: Weapon of Fate"]),
                 e("Garro: Vow of Faith", "Novella · Garro part 3", "KE IF", o=40, aliases=["Vow of Faith"])]},
             {"name": "Emperor's Children & Iron Warriors", "color": "#d77fd2", "books": [
                 e("Angel Exterminatus", _num(23), "EC IW SL", o=19), e("Tallarn", _num(45), "IW IF SH", o=35)]},
@@ -145,15 +146,19 @@ HORUS_HERESY = {
         ]},
         {"kind": "solo", "name": "The Siege of Terra", "color": "#e2725b",
          "hint": "Not in the chart: continues after The Buried Dagger", "books": [
+            # Novellas at Hardcover's half positions (not in the chart, which predates most of the Siege).
             e("The Solar War", f"{_SOT} #1"), e("The Lost and the Damned", f"{_SOT} #2"),
-            e("The First Wall", f"{_SOT} #3"), e("Saturnine", f"{_SOT} #4"), e("Mortis", f"{_SOT} #5"),
+            e("The First Wall", f"{_SOT} #3"), e("Sons of the Selenar", f"{_SOT} #3.5 · Novella"),
+            e("Saturnine", f"{_SOT} #4"), e("Fury of Magnus", f"{_SOT} #4.5 · Novella"), e("Mortis", f"{_SOT} #5"),
             e("Warhawk", f"{_SOT} #6"), e("Echoes of Eternity", f"{_SOT} #7"),
+            e("Garro: Knight of Grey", f"{_SOT} #7.5 · Novella"),
             e("The End and the Death: Volume I", f"{_SOT} #8, vol. I",
               aliases=["The End and the Death, Vol. I", "The End and the Death Volume One", "The End and the Death Volume 1"]),
             e("The End and the Death: Volume II", f"{_SOT} #8, vol. II",
               aliases=["The End and the Death, Vol. II", "The End and the Death Volume Two", "The End and the Death Volume 2"]),
             e("The End and the Death: Volume III", f"{_SOT} #8, vol. III",
-              aliases=["The End and the Death, Vol. III", "The End and the Death Volume Three", "The End and the Death Volume 3"])]},
+              aliases=["The End and the Death, Vol. III", "The End and the Death Volume Three", "The End and the Death Volume 3"]),
+            e("Era of Ruin", f"{_SOT} #11")]},
         {"kind": "loose", "name": "Act 3 · Other stories", "color": "#8f99a8",
          "hint": "Written after their arcs ended: any order once Act 2 is done", "books": [
             e("Restorer", "Short"), e("Prologue to Nikaea", "Short"),
@@ -162,7 +167,8 @@ HORUS_HERESY = {
             e("Blackshields: The Broken Chain", "Audio drama · Blackshields 3/3", aliases=["The Broken Chain"]),
             e("Spear of Ultramar", "Novella"), e("Dreadwing", "Novella"), e("Old Wounds, New Scars", "Short"),
             e("Abyssal", "Short"), e("The Last Council", "Short"), e("Bringer of Sorrow", "Short"),
-            e("Lantern's Light", "Short"), e("Hubris of Monarchia", "Audio drama"), e("Nightfane", "Audio drama"),
+            e("Lantern's Light", "Short"), e("Hubris of Monarchia", "Audio drama"),
+            e("Nightfane", "Audio drama", aliases=["Nightfane: The Horus Heresy Series"]),
             e("The Revelation of the Word", "Audio drama"), e("The Serpent's Dance", "Short"),
             e("The Lightning Hall", "Short"), e("Eater of Dreams", "Short"), e("Bloodhowl", "Short"),
             e("Amor Fati", "Short")]},

@@ -11,22 +11,40 @@
       <h3>{{ p.name }}</h3>
       <p class="summary">{{ p.description }}</p>
       <p class="meta">{{ it.size }} titles</p>
-      <form action="/books/presets/{{ p.key }}/apply" method="post" class="stack-form"
-            onsubmit="return confirm('Apply the {{ p.name }} map? Any reading map the series already has is replaced.');">
+      <form action="/books/presets/{{ p.key }}/apply" method="post" class="stack-form preset-form">
         <label>Apply to
           <select name="series_id">
-            <option value="new">A new series called “{{ p.name }}”</option>
+            <option value="new" data-match="1">A new series called “{{ p.name }}”</option>
             {% set pick = preselect or it.guess %}
             {% for s in all_series %}
-              <option value="{{ s['id'] }}"{% if pick == s['id'] %} selected{% endif %}>{{ s['name'] }}</option>
+              {% set fits = p.match_series | select('in', s['name'] | lower) | list %}
+              <option value="{{ s['id'] }}" data-match="{{ 1 if fits else 0 }}"{% if pick == s['id'] %} selected{% endif %}>{{ s['name'] }}</option>
             {% endfor %}
           </select>
         </label>
+        <p class="form-error preset-warn" hidden>This series' name doesn't look like {{ p.name }}. Applying replaces its reading map and adds {{ p.name }}'s books to it. Double-check it's the right one.</p>
         <label class="check"><input type="checkbox" name="mark_unread" value="1" checked> Mark every book in the map as unread (you tick what you've read afterwards)</label>
         <button type="submit" class="btn-small btn-accent">Apply preset</button>
       </form>
     </section>
   {% endfor %}
+
+  <script>
+    // Warn before applying a preset to a series whose name doesn't match it (e.g. Discworld onto the Heresy).
+    document.querySelectorAll('.preset-form').forEach((form) => {
+      const sel = form.querySelector('select[name="series_id"]');
+      const warn = form.querySelector('.preset-warn');
+      const update = () => { warn.hidden = sel.selectedOptions[0].dataset.match === '1'; };
+      sel.addEventListener('change', update);
+      update();
+      form.addEventListener('submit', (e) => {
+        const opt = sel.selectedOptions[0];
+        const target = opt.value === 'new' ? 'a new series' : '“' + opt.textContent.trim() + '”';
+        const extra = opt.dataset.match === '1' ? '' : '\n\nWARNING: that series doesn’t look like this preset.';
+        if (!confirm('Apply this preset to ' + target + '? Any reading map it already has is replaced.' + extra)) e.preventDefault();
+      });
+    });
+  </script>
 
   <section class="card preset-card">
     <h3>Any other series</h3>
