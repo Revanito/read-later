@@ -8,7 +8,10 @@ ones as manual books, and stores the map in the map_* tables (see books_db).
 Horus Heresy: reading order and narrative arcs from wasniahC's "Horus Heresy Reading Order -
 Narrative Arcs" chart (last updated 2022-01-12). Its 23 coloured lines are paired into arc columns;
 every book keeps dots for all the lines it belongs to. Siege of Terra isn't in that chart and is
-appended after The Buried Dagger.
+appended after The Buried Dagger. Neither are the Primarchs and Characters novels (Hardcover lists them
+as separate series): reading guides agree they fit any time after the first five novels, so they get an
+"any order" section, except Sigismund and Eidolon (set on the eve of the Siege), which join Act 3's
+prelude. Luther and Zardu Layak carry a note on the book they're best read after.
 """
 import books_db
 
@@ -34,6 +37,9 @@ _SUB_FR = [
     ("up to Kryptos", "jusqu'à Kryptos"), ("Wolf's Claw onwards", "à partir de Wolf's Claw"),
     ("up to Shield of Lies", "jusqu'à Shield of Lies"), ("Garro part 3", "Garro, partie 3"),
     (" · part", " · partie"),
+    ("Primarchs anthology", "Anthologie des Primarques"), ("Primarchs #", "Primarques #"),
+    ("Characters #", "Personnages #"), ("Unification Wars prequel", "préquelle, guerres d'Unification"),
+    ("best after", "de préférence après"), ("eve of the Siege", "à la veille du Siège"),
 ]
 
 
@@ -65,16 +71,22 @@ HH_LINES = {
 
 _SOT = "Siege of Terra"
 
+
+def _pr(title, n, line, author):
+    return e(title, f"Primarchs #{n}", line, author=author)
+
 HORUS_HERESY = {
     "key": "horus-heresy",
     "name": "The Horus Heresy + Siege of Terra",
     "name_fr": "L'Hérésie d'Horus + Le Siège de Terra",
     "description_fr": ("L'ordre de lecture par arcs narratifs de wasniahC : l'Acte 1, les 49 entrées de l'Acte 2 en "
-                       "10 colonnes d'arcs plus les anthologies, l'Acte 3, puis le Siège de Terra. 101 titres, avec "
-                       "des pastilles pour les 23 fils narratifs du schéma."),
+                       "10 colonnes d'arcs plus les anthologies, l'Acte 3, puis le Siège de Terra, avec les romans "
+                       "Primarques et Personnages. 125 titres, avec des pastilles pour les 23 fils narratifs du "
+                       "schéma. Les séries Primarques et Personnages déjà importées y sont fusionnées."),
     "description": ("wasniahC's narrative-arcs reading order: Act 1, Act 2's 49 entries in 10 arc columns plus "
-                    "the anthologies, Act 3, then Siege of Terra. 101 titles, with dots for the chart's 23 "
-                    "narrative lines."),
+                    "the anthologies, Act 3, then Siege of Terra, plus the Primarchs and Characters novels. "
+                    "125 titles, with dots for the chart's 23 narrative lines. Primarchs / Characters series "
+                    "you imported are folded into it."),
     "match_series": ["horus heresy", "siege of terra"],
     "author": "",
     "col": 112,
@@ -172,6 +184,10 @@ HORUS_HERESY = {
             {"seq": False, "books": [e("Heralds of the Siege", _num(52)), e("Titandeath", _num(53))]},
             {"books": [e("Wolfsbane", _num(49)), e("Slaves to Darkness", _num(51)), e("The Buried Dagger", _num(54))]},
             {"seq": False, "books": [e("Two Metaphysical Blades", "Short"), e("A Rose Watered with Blood", "Short")]},
+            # Characters novels set as the Siege begins (not in the chart).
+            {"seq": False, "books": [
+                e("Sigismund: The Eternal Crusader", "Characters #3 · eve of the Siege", "IF", author="John French"),
+                e("Eidolon: The Auric Hammer", "Characters #4 · eve of the Siege", "EC", author="Marc Collins")]},
         ]},
         {"kind": "solo", "name": "The Siege of Terra", "color": "#e2725b", "name_fr": "Le Siège de Terra",
          "hint": "Not in the chart: continues after The Buried Dagger",
@@ -203,6 +219,33 @@ HORUS_HERESY = {
             e("The Revelation of the Word", "Audio drama"), e("The Serpent's Dance", "Short"),
             e("The Lightning Hall", "Short"), e("Eater of Dreams", "Short"), e("Bloodhowl", "Short"),
             e("Amor Fati", "Short")]},
+        {"kind": "loose", "name": "The Primarchs & Characters", "color": "#b48ad6",
+         "name_fr": "Primarques et Personnages",
+         "hint": "Mostly Great Crusade portraits: any order, any time after Act 1's first five",
+         "hint_fr": "Surtout des portraits de la Grande Croisade : dans n'importe quel ordre, après les cinq premiers tomes",
+         "books": [
+            e("Valdor: Birth of the Imperium", "Characters #1 · Unification Wars prequel", "IM PE", author="Chris Wraight"),
+            e("Scions of the Emperor", "Primarchs anthology", author="Chris Wraight"),
+            _pr("Roboute Guilliman: Lord of Ultramar", 1, "UM", "David Annandale"),
+            _pr("Leman Russ: The Great Wolf", 2, "SW", "Chris Wraight"),
+            _pr("Magnus the Red: Master of Prospero", 3, "TS", "Graham McNeill"),
+            _pr("Perturabo: Hammer of Olympia", 4, "IW", "Guy Haley"),
+            _pr("Lorgar: Bearer of the Word", 5, "WB", "Gav Thorpe"),
+            _pr("Fulgrim: The Palatine Phoenix", 6, "EC", "Joshua Reynolds"),
+            _pr("Ferrus Manus: The Gorgon of Medusa", 7, "IH", "David Guymer"),
+            _pr("Jaghatai Khan: Warhawk of Chogoris", 8, "WS", "Chris Wraight"),
+            _pr("Vulkan: Lord of Drakes", 9, "SA", "David Annandale"),
+            _pr("Corax: Lord of Shadows", 10, "RG", "Guy Haley"),
+            _pr("Angron: Slave of Nuceria", 11, "WE", "Ian St. Martin"),
+            _pr("Konrad Curze: The Night Haunter", 12, "NL", "Guy Haley"),
+            _pr("Lion El'Jonson: Lord of the First", 13, "DA", "David Guymer"),
+            _pr("Alpharius: Head of the Hydra", 14, "AL", "Mike Brooks"),
+            _pr("Mortarion: The Pale King", 15, "DG", "David Annandale"),
+            _pr("Rogal Dorn: The Emperor's Crusader", 16, "IF", "Gav Thorpe"),
+            _pr("Sanguinius: The Great Angel", 17, "BA", "Chris Wraight"),
+            e("Grandfather's Gift", "Short", author="Guy Haley"),
+            e("Luther: First of the Fallen", "Characters #2 · best after Angels of Caliban", "DA", author="Gav Thorpe"),
+            e("Zardu Layak: The Crimson Apostle", "Characters #5 · best after Betrayer", "WB", author="Rich McCormick")]},
     ],
     # Section refs are 0-based indexes into "sections"; book refs are titles.
     "links": [
@@ -220,6 +263,7 @@ HORUS_HERESY = {
         ["Fulgrim", "colsfirst:2", "logic"],
         ["colslast:2", "Heralds of the Siege", "logic"], ["colslast:2", "Titandeath", "logic"],
         ["colslast:2", "Wolfsbane", "logic"],
+        ["colslast:2", "Sigismund: The Eternal Crusader", "logic"], ["colslast:2", "Eidolon: The Auric Hammer", "logic"],
     ],
 }
 
@@ -318,16 +362,29 @@ def apply_preset(key: str, series_id: int | None, mark_unread: bool = True) -> t
     index = books_db.preset_candidates(series_id, p["match_series"])  # norm key -> [rows]
     used: set[int] = set()
     by_title: dict[str, int] = {}
-    stats = {"matched": 0, "moved": 0, "created": 0}
+    stats = {"matched": 0, "moved": 0, "created": 0, "merged": 0, "folded": 0}
+    related = books_db.related_series_ids(series_id, p["match_series"])
     part_links: list[tuple[int, str]] = []
 
     def find(ent):
+        """The library's copy of an entry. With several copies of the same book (imported in two series),
+        the one furthest along is kept and the others are merged into it."""
+        hits, seen = [], set()
         for t in [ent["title"], *ent["aliases"]]:
             for k in books_db.title_keys(t):
                 for row in index.get(k, []):
-                    if row["id"] not in used:
-                        return row
-        return None
+                    if row["id"] not in used and row["id"] not in seen:
+                        seen.add(row["id"])
+                        hits.append(row)
+        if not hits:
+            return None
+        best = max(hits, key=lambda row: books_db.STATUS_RANK.get(row["status"], 0))  # first on ties
+        for row in hits:
+            if row["id"] != best["id"] and books_db.same_book(best, row):
+                used.add(row["id"])
+                books_db.merge_book_into(best["id"], row["id"])
+                stats["merged"] += 1
+        return best
 
     section_ids: list[int] = []
     order = 0
@@ -383,6 +440,14 @@ def apply_preset(key: str, series_id: int | None, mark_unread: bool = True) -> t
 
     for a, b, kind in p.get("links", []):
         books_db.add_link(series_id, ref(a), ref(b), kind)
+
+    # Related series (e.g. "The Horus Heresy: Primarchs") are folded in: leftover copies of placed books
+    # are merged, anything else moves in unplaced, and the old series keeps only its release watching.
+    for rid in related:
+        st = books_db.fold_series(rid, series_id)
+        stats["moved"] += st["moved"]
+        stats["merged"] += st["merged"]
+        stats["folded"] += 1
 
     if mark_unread:
         books_db.mark_unread(list(by_title.values()))

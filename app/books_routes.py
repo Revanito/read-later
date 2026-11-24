@@ -280,6 +280,8 @@ def series_page(request: Request, series_id: int, notice: str = ""):
     s = books_db.get_series(series_id)
     if s is None:
         return _redirect("/books", _("That series no longer exists."))
+    if s["merged_into"]:  # folded into another series (e.g. Primarchs into the Heresy map)
+        return RedirectResponse(f"/books/series/{s['merged_into']}", status_code=303)
     books = books_db.series_books(series_id)
     counted = [b for b in books if b["status"] != "skip"]
     return templates.TemplateResponse(request, "book_series.html", {
@@ -313,6 +315,10 @@ def apply_preset(key: str, series_id: str = Form("new"), mark_unread: str = Form
     moved = " " + _("({n} moved in from other series)", n=st["moved"]) if st["moved"] else ""
     msg = (ngettext("Reading map applied: {n} book matched", "Reading map applied: {n} books matched", st["matched"])
            + moved + _(", {n} added.", n=st["created"]))
+    if st["folded"]:
+        msg += " " + ngettext("{n} related series folded in", "{n} related series folded in", st["folded"])
+        msg += (" " + ngettext("({n} duplicate merged).", "({n} duplicates merged).", st["merged"])
+                if st["merged"] else ".")
     return _redirect(f"/books/series/{sid}?view=map", msg)
 
 

@@ -350,6 +350,9 @@ FR = {
     "Reading map applied: {n} books matched": "Carte de lecture appliquée : {n} livres reconnus",
     "({n} moved in from other series)": "({n} récupérés d'autres séries)",
     ", {n} added.": ", {n} ajoutés.",
+    "{n} related series folded in": "{n} série liée fusionnée",
+    "({n} duplicate merged).": "({n} doublon fusionné).",
+    "({n} duplicates merged).": "({n} doublons fusionnés).",
     "Map started with one arc holding every book. Add sections and arcs, then place books.":
         "Carte créée avec un seul arc contenant tous les livres. Ajoutez des sections et des arcs, puis placez les livres.",
     "Reading map removed. The books are untouched.": "Carte de lecture retirée. Les livres sont intacts.",
@@ -392,6 +395,7 @@ FR = {
 FR_PLURAL = {
     "{n} series": "{n} séries",
     "{n} standalone": "{n} indépendants",
+    "{n} related series folded in": "{n} séries liées fusionnées",
 }
 
 # Strings the browser-side scripts need (window.RL_TEXT, filled by base.html in the current language).

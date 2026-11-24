@@ -155,7 +155,7 @@ def _now() -> str:
 # database, so they're added here on start-up.
 _ADDED_COLUMNS = {
     "books": {"title_fr": "TEXT", "fr_source": "TEXT", "fr_checked_at": "TEXT"},
-    "series": {"name_fr": "TEXT"},
+    "series": {"name_fr": "TEXT", "merged_into": "INTEGER"},
     "map_sections": {"name_fr": "TEXT", "hint_fr": "TEXT"},
     "map_groups": {"name_fr": "TEXT", "hint_fr": "TEXT"},
     "map_entries": {"sub_fr": "TEXT"},
@@ -274,7 +274,8 @@ def _norm_title(title: str) -> str:
 def list_series() -> list[dict]:
     """Every series with its books in read order, plus progress counts and the next unread book."""
     with get_conn() as conn:
-        series = conn.execute("SELECT * FROM series ORDER BY name COLLATE NOCASE").fetchall()
+        # Series folded into another one (merged_into) stay only for new-release watching: no card.
+        series = conn.execute("SELECT * FROM series WHERE merged_into IS NULL ORDER BY name COLLATE NOCASE").fetchall()
         books = conn.execute(
             "SELECT * FROM books WHERE series_id IS NOT NULL ORDER BY series_id, sort_order, id"
         ).fetchall()
@@ -305,12 +306,17 @@ def get_series(series_id: int) -> sqlite3.Row | None:
 
 def all_series_names() -> list[sqlite3.Row]:
     with get_conn() as conn:
-        return conn.execute("SELECT id, name FROM series ORDER BY name COLLATE NOCASE").fetchall()
+        return conn.execute("SELECT id, name FROM series WHERE merged_into IS NULL ORDER BY name COLLATE NOCASE").fetchall()
 
 
 def find_series_by_hc(hc_id: int) -> sqlite3.Row | None:
+    """The local series for a Hardcover series; a folded series answers with the one it lives in now."""
     with get_conn() as conn:
-        return conn.execute("SELECT * FROM series WHERE hc_id = ?", (hc_id,)).fetchone()
+        row = conn.execute("SELECT * FROM series WHERE hc_id = ?", (hc_id,)).fetchone()
+        if row is not None and row["merged_into"]:
+            target = conn.execute("SELECT * FROM series WHERE id = ?", (row["merged_into"],)).fetchone()
+            return target or row
+        return row
 
 
 def create_series(name: str, author: str = "", hc_id: int | None = None, hc_slug: str = "") -> int:
@@ -340,6 +346,8 @@ def delete_series(series_id: int) -> None:
         ids = [r["id"] for r in conn.execute("SELECT id FROM books WHERE series_id = ?", (series_id,))]
         conn.execute("DELETE FROM books WHERE series_id = ?", (series_id,))
         conn.execute("DELETE FROM series WHERE id = ?", (series_id,))
+        # Series folded into this one are empty shells kept for release watching: they go with it.
+        conn.execute("DELETE FROM series WHERE merged_into = ?", (series_id,))
         conn.execute("DELETE FROM book_recs WHERE seed_type = 'series' AND seed_id = ?", (series_id,))
         conn.executemany("DELETE FROM book_recs WHERE seed_type = 'book' AND seed_id = ?", [(i,) for i in ids])
         conn.executemany("DELETE FROM lookup_queue WHERE book_id = ?", [(i,) for i in ids])
@@ -504,6 +512,78 @@ def delete_book(book_id: int) -> None:
         conn.execute("DELETE FROM book_recs WHERE seed_type = 'book' AND seed_id = ?", (book_id,))
         conn.execute("DELETE FROM lookup_queue WHERE book_id = ?", (book_id,))
         _forget_book_in_maps(conn, book_id)
+
+
+# --- folding one series into another ---------------------------------------------------------------
+# "The Horus Heresy: Primarchs" imported from Hardcover can be folded into "The Horus Heresy + Siege of
+# Terra": its books move over, copies of a book already there are merged, and the emptied series stays
+# behind with merged_into set. It no longer shows anywhere, but its Hardcover link keeps feeding the
+# new-release check, and adding a release from it goes to the series it was folded into.
+
+STATUS_RANK = {"want": 0, "skip": 1, "reading": 2, "read": 3}
+
+
+def same_book(a, b) -> bool:
+    """Two rows for the same book: same Hardcover id, or same title by the same author."""
+    if a["hc_id"] and b["hc_id"]:
+        return a["hc_id"] == b["hc_id"]
+    return titles_match(a["title"], b["title"]) and same_author(a["author"], b["author"])
+
+
+def merge_book_into(keep_id: int, dup_id: int) -> None:
+    """Fold a duplicate row into the one that stays: the further-along status wins, missing details
+    (Hardcover link, cover, year, French title) are filled in, then the duplicate is deleted."""
+    keep, dup = get_book(keep_id), get_book(dup_id)
+    if keep is None or dup is None or keep_id == dup_id:
+        return
+    status, finished = keep["status"], keep["finished_at"]
+    if STATUS_RANK.get(dup["status"], 0) > STATUS_RANK.get(status, 0):
+        status, finished = dup["status"], dup["finished_at"]
+    fr_title, fr_source = keep["title_fr"], keep["fr_source"]
+    if dup["title_fr"] and (not fr_title or (dup["fr_source"] == "manual" and fr_source != "manual")):
+        fr_title, fr_source = dup["title_fr"], dup["fr_source"]
+    with get_conn() as conn:
+        conn.execute(
+            """UPDATE books SET status = ?, finished_at = ?, title_fr = ?, fr_source = ?,
+                   hc_id = COALESCE(hc_id, ?), hc_slug = COALESCE(NULLIF(hc_slug, ''), ?),
+                   cover_url = COALESCE(NULLIF(cover_url, ''), ?), year = COALESCE(year, ?)
+               WHERE id = ?""",
+            (status, finished, fr_title, fr_source, dup["hc_id"], dup["hc_slug"], dup["cover_url"], dup["year"],
+             keep_id))
+        if keep["hc_id"] is None and dup["hc_id"] is not None:
+            conn.execute("DELETE FROM lookup_queue WHERE book_id = ?", (keep_id,))
+    delete_book(dup_id)
+
+
+def fold_series(src_id: int, dst_id: int) -> dict:
+    """Move every book of series `src_id` into `dst_id` (merging copies of books already there) and
+    mark `src_id` as folded into it. Returns {"moved": n, "merged": n}."""
+    stats = {"moved": 0, "merged": 0}
+    if src_id == dst_id or get_series(src_id) is None or get_series(dst_id) is None:
+        return stats
+    dst_books = list(series_books(dst_id))
+    for b in series_books(src_id):
+        twin = next((d for d in dst_books if same_book(d, b)), None)
+        if twin is not None:
+            merge_book_into(twin["id"], b["id"])
+            stats["merged"] += 1
+        else:
+            set_book_series_raw(b["id"], dst_id)
+            dst_books.append(b)
+            stats["moved"] += 1
+    with get_conn() as conn:
+        _clear_map(conn, src_id)
+        conn.execute("UPDATE series SET merged_into = ? WHERE id = ?", (dst_id, src_id))
+        conn.execute("UPDATE series SET merged_into = ? WHERE merged_into = ?", (dst_id, src_id))
+        conn.execute("DELETE FROM book_recs WHERE seed_type = 'series' AND seed_id = ?", (src_id,))
+    renumber_from_map(dst_id)
+    return stats
+
+
+def folded_series(series_id: int) -> list[sqlite3.Row]:
+    with get_conn() as conn:
+        return conn.execute("SELECT * FROM series WHERE merged_into = ? ORDER BY name COLLATE NOCASE",
+                            (series_id,)).fetchall()
 
 
 # --- manually added books -------------------------------------------------------------------------
@@ -789,7 +869,7 @@ def active_releases(today: str, recent_days: int = 14) -> list[dict]:
     with get_conn() as conn:
         rows = conn.execute("SELECT * FROM new_releases WHERE dismissed = 0").fetchall()
         local_series = {r["hc_id"]: r["id"] for r in conn.execute(
-            "SELECT id, hc_id FROM series WHERE hc_id IS NOT NULL")}
+            "SELECT COALESCE(merged_into, id) AS id, hc_id FROM series WHERE hc_id IS NOT NULL")}
     cutoff = (datetime.fromisoformat(today) - timedelta(days=recent_days)).date().isoformat()
     out = []
     for r in rows:
@@ -926,12 +1006,22 @@ def title_keys(title: str) -> list[str]:
     return [n, n[4:]] if n.startswith("the ") else [n]
 
 
+def related_series(conn: sqlite3.Connection, series_id: int, match_words: list[str]) -> list[int]:
+    """Other (not folded) series whose name contains one of `match_words`, oldest first."""
+    return [r["id"] for r in conn.execute("SELECT id, name FROM series WHERE merged_into IS NULL ORDER BY id")
+            if r["id"] != series_id and any(w in r["name"].lower() for w in match_words)]
+
+
+def related_series_ids(series_id: int, match_words: list[str]) -> list[int]:
+    with get_conn() as conn:
+        return related_series(conn, series_id, match_words)
+
+
 def preset_candidates(series_id: int, match_words: list[str]) -> dict[str, list[sqlite3.Row]]:
     """Books a preset may claim: the target series first, then series whose name contains one of
     `match_words`, then standalone books. Indexed by title key."""
     with get_conn() as conn:
-        related = [r["id"] for r in conn.execute("SELECT id, name FROM series")
-                   if r["id"] != series_id and any(w in r["name"].lower() for w in match_words)]
+        related = related_series(conn, series_id, match_words)
         rows = list(conn.execute("SELECT * FROM books WHERE series_id = ? ORDER BY sort_order, id", (series_id,)))
         for sid in related:
             rows += list(conn.execute("SELECT * FROM books WHERE series_id = ? ORDER BY sort_order, id", (sid,)))

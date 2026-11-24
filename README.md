@@ -122,7 +122,7 @@ reading-order charts people post for the Horus Heresy or Discworld. The series p
 
 | Preset | Source | Titles |
 |---|---|---|
-| The Horus Heresy + Siege of Terra | wasniahC's *Horus Heresy Reading Order – Narrative Arcs* chart (2022-01-12): Act 1, Act 2's 49 entries in 10 arc columns plus anthologies, Act 3; Siege of Terra appended | 97, with dots for the chart's 23 narrative lines and anthology contents on hover |
+| The Horus Heresy + Siege of Terra | wasniahC's *Horus Heresy Reading Order – Narrative Arcs* chart (2022-01-12): Act 1, Act 2's 49 entries in 10 arc columns plus anthologies, Act 3; Siege of Terra appended; the Primarchs and Characters novels added (see below) | 125, with dots for the chart's 23 narrative lines and anthology contents on hover |
 | Discworld | character arcs | 41 novels |
 
 Applying one matches books you already have by title and aliases (e.g. *Garro* ↔ *Garro (Parts 1–2)*), also
@@ -132,6 +132,24 @@ Hardcover/Open Library later; the Heresy's novellas and shorts are added without
 auto-link (fill in the author on a book's page and it will). You can tick
 "mark everything unread". Books in the series the preset doesn't cover land in **Not placed in the map
 yet**, never deleted. Re-applying is safe (no duplicates).
+
+**Related series are folded in.** Hardcover lists *The Horus Heresy: Primarchs* and *The Horus Heresy:
+Characters* as series of their own; applying the Heresy preset folds them (and any other series named like
+the preset) into the target series:
+
+- their books move in; when the same book exists twice (Luther is in both, Guilliman and Valdor were also
+  in the main series), the copies are merged, keeping the furthest-along status, cover and French title;
+- the old series disappears from the Books page and pickers, and its page redirects to the merged one;
+- it stays linked to Hardcover, so new Primarchs/Characters books still show up in the new-release panel,
+  and **Add** puts them in the merged series (under *Not placed in the map yet*);
+- deleting the merged series deletes the folded ones too.
+
+Where those novels sit in the Heresy map: reading guides agree they fit any time after the first five
+novels (most are Great Crusade portraits), so they get an *any order* section, **The Primarchs &
+Characters**, with a legion dot each. Three carry a note: *Valdor* (Unification Wars prequel, any time),
+*Luther* (best after *Angels of Caliban*), *Zardu Layak* (Word Bearers, best after *Betrayer*).
+*Sigismund* and *Eidolon*, set on the eve of the Siege, join Act 3's prelude and get **Up next** once
+Act 2 is done.
 
 **Any other series:** press **+ Build a reading map** on its page. It starts as one arc with every book;
 the editor lets you add sections and arcs, move books between them, reorder, label them ("#3", "Novella"),
