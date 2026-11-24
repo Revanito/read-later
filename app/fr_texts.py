@@ -419,6 +419,8 @@ FR = {
     "Sources:": "Sources :",
     "Put the series in this order": "Remettre la série dans cet ordre",
     "Build a reading map with one section per line": "Créer une carte de lecture avec une section par cycle",
+    "Build a reading map in this order, each book labelled with its line":
+        "Créer une carte de lecture dans cet ordre, chaque livre étiqueté avec son cycle",
     "replaces the current map": "remplace la carte actuelle",
     "Ticked missing books are added as manual books and link themselves to Hardcover later. Nothing changes until you apply.":
         "Les livres manquants cochés sont ajoutés à la main et se relient à Hardcover plus tard. Rien ne change avant d'appliquer.",

@@ -186,9 +186,11 @@ itself). The result is a proposal shown next to your books:
   Prelude to Cataclysm");
 - the model's notes, caveats and sources (the author's page when there is one) are listed;
 - **Apply** moves the ticked books in from other series, adds the ticked missing ones as manual books
-  (they link to Hardcover later), puts the series in that order and, optionally, builds a reading map
-  with one section per line (main series, then each spin-off). Nothing changes before you apply;
-  **Discard** drops the proposal.
+  (they link to Hardcover later), puts the series in that order and, optionally, builds a reading map:
+  one section per line when the lines follow one another (main series, then each spin-off), or a single
+  column in the researched order with each book labelled by its line when they take turns (Warcraft's
+  chronological order). Nothing changes before you apply; **Discard** drops the proposal. A map can be
+  removed at the bottom of **Edit reading map**.
 
 **Catching up on a long series:** every row on a series page has **✓ Read all above**, which marks
 every earlier book in your read order as Read in one click (skipped books stay skipped).

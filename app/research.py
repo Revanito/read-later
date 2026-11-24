@@ -78,6 +78,7 @@ def state(series_id: int) -> dict | None:
     result = json.loads(row["payload"])
     out["result"] = result
     out["items"] = match_items(series_id, result.get("order") or [])
+    out["lines"], out["interleaved"] = line_layout(out["items"])
     return out
 
 
@@ -179,15 +180,43 @@ def apply(series_id: int, add: set[int], reorder: bool, build_map: bool) -> dict
             books_db._renumber(conn, ids + rest)
         stats["ordered"] = True
     if build_map:
+        _, interleaved = line_layout([it for it, _ in placed])
         lines: dict[str, list[tuple[int, str]]] = {}
         for it, bid in placed:
-            line = str(it.get("line") or s["name"]).strip() or s["name"]
+            line = _line(it, s["name"])
             num = str(it.get("number") or "").strip()
             sub = num if not num or not num[0].isdigit() else f"#{num}"
-            lines.setdefault(line, []).append((bid, sub))
+            if interleaved:
+                # Lines take turns (Warcraft's chronological order): one column in the researched order,
+                # each book labelled with its line, so the order survives.
+                lines.setdefault(s["name"], []).append((bid, f"{line} · {sub}" if sub else line))
+            else:
+                lines.setdefault(line, []).append((bid, sub))
         books_db.build_line_map(series_id, list(lines.items()))
         stats["mapped"] = True
     return stats
+
+
+def _line(it: dict, default: str) -> str:
+    return str(it.get("line") or default).strip() or default
+
+
+def line_layout(items: list[dict]) -> tuple[list[str], bool]:
+    """The lines in order of first appearance, and whether they interleave (a line comes back after
+    another one started) rather than following one another."""
+    order: list[str] = []
+    interleaved = False
+    for it in items:
+        line = _line(it, "")
+        if not order or order[-1] != line:
+            if line in order:
+                interleaved = True
+            order.append(line)
+    seen: list[str] = []
+    for line in order:
+        if line not in seen:
+            seen.append(line)
+    return seen, interleaved
 
 
 def _clean_number(n) -> str:

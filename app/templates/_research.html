@@ -26,7 +26,7 @@
     {% set n_here = rs['items'] | selectattr('where', 'equalto', 'here') | list | length %}
     {% set n_else = rs['items'] | selectattr('where', 'equalto', 'elsewhere') | list | length %}
     {% set n_miss = rs['items'] | selectattr('where', 'equalto', 'missing') | list | length %}
-    {% set lines = rs['items'] | map(attribute='line') | reject('none') | unique | list %}
+    {% set lines = rs['lines'] | reject('equalto', '') | list %}
     <p class="meta">
       {{ ngettext("{n} title proposed", "{n} titles proposed", rs['items'] | length) }}:
       {{ _("{n} in this series", n=n_here) }}{% if n_else %}, {{ _("{n} elsewhere in your library", n=n_else) }}{% endif %},
@@ -71,8 +71,13 @@
       {% endif %}
       <div class="research-apply">
         <label><input type="checkbox" name="reorder" value="1" checked> {{ _("Put the series in this order") }}</label>
-        <label><input type="checkbox" name="build_map" value="1"{% if lines | length > 1 and not map %} checked{% endif %}>
-          {{ _("Build a reading map with one section per line") }}{% if lines | length > 1 %} ({{ lines | join(', ') }}){% endif %}{% if map %} · <span class="warn">{{ _("replaces the current map") }}</span>{% endif %}</label>
+        <label><input type="checkbox" name="build_map" value="1"{% if lines | length > 1 and not rs['interleaved'] and not map %} checked{% endif %}>
+          {% if rs['interleaved'] %}
+            {{ _("Build a reading map in this order, each book labelled with its line") }}{% if lines | length > 1 %} ({{ lines | join(', ') }}){% endif %}
+          {% else %}
+            {{ _("Build a reading map with one section per line") }}{% if lines | length > 1 %} ({{ lines | join(', ') }}){% endif %}
+          {% endif %}
+          {% if map %} · <span class="warn">{{ _("replaces the current map") }}</span>{% endif %}</label>
         <p class="meta">{{ _("Ticked missing books are added as manual books and link themselves to Hardcover later. Nothing changes until you apply.") }}</p>
         <button type="submit" class="btn-small btn-accent">{{ _("Apply") }}</button>
       </div>
