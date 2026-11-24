@@ -13,10 +13,12 @@
     <div class="login-flags">{% include "_flags.html" %}</div>
     <form action="/login" method="post" class="card login-card">
       <h1>read-later</h1>
-      <p class="meta">{{ _("Private. Enter the password to continue.") }}</p>
+      <p class="meta">{{ _("Private. Log in to continue.") }}</p>
       {% if error %}<p class="form-error">{{ error }}</p>{% endif %}
       <input type="hidden" name="next" value="{{ next }}">
-      <input type="password" name="password" placeholder="{{ _('Password') }}" autocomplete="current-password" required autofocus>
+      <input type="text" name="username" placeholder="{{ _('Username') }}" value="{{ username or '' }}" autocomplete="username"
+             autocapitalize="none" spellcheck="false" required{% if not username %} autofocus{% endif %}>
+      <input type="password" name="password" placeholder="{{ _('Password') }}" autocomplete="current-password" required{% if username %} autofocus{% endif %}>
       <button type="submit" class="btn-primary">{{ _("Log in") }}</button>
     </form>
   </main>

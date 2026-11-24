@@ -13,16 +13,21 @@ class LLMError(Exception):
     pass
 
 
-async def complete(prompt: str, model: str) -> str:
+async def complete(prompt: str, model: str, web_search: bool = False, timeout: float | None = None) -> str:
+    """One prompt, one reply. `web_search` lets the model search the web first (1min.ai's own search,
+    works with any model); it makes a call slower (30-90 s) and costs more."""
     url = f"{settings.one_min_base_url}/api/chat-with-ai"
+    prompt_object = {"prompt": prompt}
+    if web_search:
+        prompt_object["settings"] = {"webSearchSettings": {"webSearch": True}}
     body = {
         "type": "UNIFY_CHAT_WITH_AI",
         "model": model,
-        "promptObject": {"prompt": prompt},
+        "promptObject": prompt_object,
     }
     headers = {"API-KEY": settings.one_min_api_key, "Content-Type": "application/json"}
 
-    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+    async with httpx.AsyncClient(timeout=httpx.Timeout(timeout) if timeout else _TIMEOUT) as client:
         try:
             resp = await client.post(url, headers=headers, json=body)
             resp.raise_for_status()

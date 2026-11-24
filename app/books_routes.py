@@ -16,6 +16,7 @@ import hardcover
 import openlibrary
 import presets
 import recommender
+import research
 import watcher
 from web import templates
 
@@ -290,7 +291,43 @@ def series_page(request: Request, series_id: int, notice: str = ""):
         "subjects": books_db.series_subjects(series_id),
         "recs": books_db.get_recs("series", series_id),
         "map": books_db.map_json(series_id),
+        "research": research.state(series_id),
+        "series_names": {r["id"]: r["name"] for r in books_db.all_series_names()},
     })
+
+
+# --- reading-order research (AI + web search, see research.py) -------------------------------------
+
+@router.post("/series/{series_id}/research")
+async def research_start(series_id: int):
+    if books_db.get_series(series_id) is None:
+        return _redirect("/books", _("That series no longer exists."))
+    research.start(series_id)
+    return RedirectResponse(f"/books/series/{series_id}#research", status_code=303)
+
+
+@router.post("/series/{series_id}/research/apply")
+def research_apply(series_id: int, add: list[str] = Form([]), reorder: str = Form(""), build_map: str = Form("")):
+    if books_db.get_series(series_id) is None:
+        return _redirect("/books", _("That series no longer exists."))
+    picked = {i for i in (_int_or_none(x) for x in add) if i is not None}
+    st = research.apply(series_id, picked, bool(reorder), bool(build_map))
+    books_db.delete_research(series_id)
+    parts = [ngettext("{n} book added", "{n} books added", st["added"])]
+    if st["moved"]:
+        parts.append(ngettext("{n} moved in from another series", "{n} moved in from other series", st["moved"]))
+    if st["ordered"]:
+        parts.append(_("read order updated"))
+    if st["mapped"]:
+        parts.append(_("reading map rebuilt"))
+    view = "?view=map" if st["mapped"] else ""
+    return _redirect(f"/books/series/{series_id}{view}", _("Research applied: {details}.", details=", ".join(parts)))
+
+
+@router.post("/series/{series_id}/research/discard")
+def research_discard(series_id: int):
+    books_db.delete_research(series_id)
+    return RedirectResponse(f"/books/series/{series_id}", status_code=303)
 
 
 # --- reading maps: presets ------------------------------------------------------------------------

@@ -8,11 +8,13 @@ from fastapi.requests import Request
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
+import accounts
 import auth
 import books_db
 import db
 import i18n
 import watcher
+from account_routes import router as account_router
 from books_routes import router as books_router
 from extractor import ExtractionError, fetch_and_extract
 from summarizer import SummarizeError, summarize
@@ -26,6 +28,9 @@ log = logging.getLogger("main")
 async def lifespan(app: FastAPI):
     db.init_db()
     books_db.init_books_db()
+    accounts.init()
+    for u in accounts.list_users():  # every profile's own file gets the same tables / migrations
+        accounts.init_user_db(u["id"])
     watch_task = asyncio.create_task(watcher.loop())
     yield
     watch_task.cancel()
@@ -34,13 +39,23 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 app.include_router(books_router)
+app.include_router(account_router)
+
+# Pages a user who still has to replace a temporary password can reach.
+_PASSWORD_CHANGE_PATHS = ("/account/password", "/logout")
 
 
 @app.middleware("http")
 async def require_login(request: Request, call_next):
     # Language first, so the login page and every notice come out in the right one.
     i18n.set_lang(i18n.pick_lang(request.cookies.get(i18n.COOKIE), request.headers.get("accept-language")))
-    if auth.is_public_path(request.url.path) or auth.is_valid_token(request.cookies.get(auth.COOKIE_NAME)):
+    if auth.is_public_path(request.url.path):
+        return await call_next(request)
+    user = auth.user_from_token(request.cookies.get(auth.COOKIE_NAME))
+    if user is not None:
+        accounts.activate(user)  # from here on, db.get_conn() opens this profile's library
+        if user["must_change"] and request.url.path not in _PASSWORD_CHANGE_PATHS:
+            return RedirectResponse("/account/password", status_code=303)
         return await call_next(request)
     target = request.url.path + (f"?{request.url.query}" if request.url.query else "")
     # A POST from an expired session lands back on the page it came from after logging in, not on the
@@ -56,30 +71,31 @@ async def require_login(request: Request, call_next):
 def login_page(request: Request, next: str = "/"):
     if auth.is_valid_token(request.cookies.get(auth.COOKIE_NAME)):
         return RedirectResponse(auth.safe_next(next), status_code=303)
-    return templates.TemplateResponse(request, "login.html", {"next": auth.safe_next(next), "error": None})
+    return templates.TemplateResponse(request, "login.html", {"next": auth.safe_next(next), "error": None, "username": ""})
 
 
 @app.post("/login")
-async def login(request: Request, password: str = Form(""), next: str = Form("/")):
+async def login(request: Request, username: str = Form(""), password: str = Form(""), next: str = Form("/")):
     ip = auth.client_ip(request)
     target = auth.safe_next(next)
     if auth.is_locked_out(ip):
         log.warning("login refused for %s: too many failed attempts", ip)
         return templates.TemplateResponse(request, "login.html", {
-            "next": target, "error": i18n._("Too many failed attempts. Try again in a few minutes."),
+            "next": target, "error": i18n._("Too many failed attempts. Try again in a few minutes."), "username": username,
         }, status_code=429)
-    if not auth.check_password(password):
+    user = accounts.authenticate(username, password)
+    if user is None:
         auth.record_failure(ip)
         log.warning("failed login from %s", ip)
         await asyncio.sleep(1)  # slows down guessing without needing a real rate-limiter
         return templates.TemplateResponse(request, "login.html", {
-            "next": target, "error": i18n._("Wrong password."),
+            "next": target, "error": i18n._("Wrong username or password."), "username": username,
         }, status_code=401)
 
     auth.clear_failures(ip)
-    resp = RedirectResponse(target, status_code=303)
+    resp = RedirectResponse("/account/password" if user["must_change"] else target, status_code=303)
     resp.set_cookie(
-        auth.COOKIE_NAME, auth.make_session_token(),
+        auth.COOKIE_NAME, auth.make_session_token(user),
         max_age=auth.settings.session_days * 86400, httponly=True, samesite="lax", secure=auth.is_https(request),
     )
     return resp

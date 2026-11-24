@@ -16,6 +16,13 @@
       <a href="/books" class="tab{% if tab == 'books' %} active{% endif %}">{{ _("Books") }}</a>
     </nav>
     {% include "_flags.html" %}
+    {% set me = current_user() %}
+    {% if me %}
+      <nav class="user-nav">
+        {% if me['is_admin'] %}<a href="/admin/users" class="tab{% if tab == 'users' %} active{% endif %}">{{ _("Profiles") }}</a>{% endif %}
+        <a href="/account" class="tab{% if tab == 'account' %} active{% endif %}" title="{{ _('Account') }}">{{ me['username'] }}</a>
+      </nav>
+    {% endif %}
     <form action="/logout" method="post" class="logout"><button type="submit">{{ _("Log out") }}</button></form>
   </header>
   {% include "_release_panel.html" %}

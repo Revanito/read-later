@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}{{ _("Account") }} - read-later{% endblock %}
+{% block content %}
+  <section class="card account-card">
+    <h2 class="page-title">{{ _("Account") }}</h2>
+    <p class="meta">{{ _("Logged in as {name}.", name=user['username']) }}{% if user['is_admin'] %} · <a href="/admin/users">{{ _("Manage profiles") }}</a>{% endif %}</p>
+
+    {% if user['must_change'] %}
+      <div class="notice">{{ _("Welcome! You're using a temporary password. Choose your own to continue.") }}</div>
+    {% endif %}
+    {% if error %}<p class="form-error">{{ error }}</p>{% endif %}
+
+    <form action="/account/password" method="post" class="stack-form">
+      <h3>{{ _("Change password") }}</h3>
+      {% if not user['must_change'] %}
+        <label>{{ _("Current password") }} <input type="password" name="current" autocomplete="current-password" required></label>
+      {% endif %}
+      <label>{{ _("New password") }} <input type="password" name="new" minlength="{{ min_len }}" autocomplete="new-password" required{% if user['must_change'] %} autofocus{% endif %}></label>
+      <label>{{ _("New password again") }} <input type="password" name="confirm" minlength="{{ min_len }}" autocomplete="new-password" required></label>
+      <p class="meta">{{ _("At least {n} characters.", n=min_len) }}</p>
+      <button type="submit" class="btn-small btn-accent">{{ _("Save password") }}</button>
+    </form>
+  </section>
+{% endblock %}

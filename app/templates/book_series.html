@@ -42,9 +42,15 @@
         </form>
         <a class="button" href="/books/presets?series_id={{ s['id'] }}">{{ _("Apply a preset") }}</a>
       {% endif %}
+      {% if not research %}
+        <form action="/books/series/{{ s['id'] }}/research" method="post" onsubmit="this.querySelector('button').disabled = true;">
+          <button type="submit" title="{{ _('Asks the AI to search the web for the recommended reading order (spin-offs, novellas, missing books). Uses 1min.ai credits, takes about a minute.') }}">{{ _("Research reading order (AI)") }}</button>
+        </form>
+      {% endif %}
     </div>
     {{ ui.manual_form([], s, author=s['author'], fixed=true) }}
   </section>
+  {% if research %}{% include "_research.html" %}{% endif %}
 
   {% if map %}
     <div class="map-toolbar">

@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}{{ _("Profiles") }} - read-later{% endblock %}
+{% block content %}
+  <section class="card">
+    <h2 class="page-title">{{ _("Profiles") }}</h2>
+    <p class="meta">{{ _("Each profile has its own library (books, series, reading maps, follows, saved links), empty to start with. AI features (summaries, recommendations, reading-order research) use your 1min.ai key for everyone.") }}</p>
+
+    {% if error %}<p class="form-error">{{ error }}</p>{% endif %}
+    {% if issued %}
+      <div class="issued" role="status">
+        <p><strong>{{ _("Profile {name} created.", name=issued.username) if issued.new else _("New password for {name}.", name=issued.username) }}</strong>
+          {{ _("Give them these, they'll pick their own password at first login. This password is shown only once.") }}</p>
+        <dl>
+          <dt>{{ _("Username") }}</dt><dd><code>{{ issued.username }}</code></dd>
+          <dt>{{ _("Temporary password") }}</dt><dd><code id="issued-pw">{{ issued.password }}</code>
+            <button type="button" class="btn-small" id="copy-pw">{{ _("Copy") }}</button></dd>
+        </dl>
+      </div>
+    {% endif %}
+
+    <table class="users-table">
+      <thead><tr><th>{{ _("Username") }}</th><th>{{ _("Library") }}</th><th>{{ _("Last login") }}</th><th></th></tr></thead>
+      <tbody>
+        {% for row in rows %}{% set u = row.u %}
+          <tr>
+            <td><strong>{{ u['username'] }}</strong>
+              {% if u['is_admin'] %}<span class="tag">{{ _("admin") }}</span>{% endif %}
+              {% if u['must_change'] %}<span class="tag tag-missing">{{ _("temporary password") }}</span>{% endif %}
+              {% if u['id'] == me['id'] %}<span class="meta">({{ _("you") }})</span>{% endif %}</td>
+            <td class="meta">{{ ngettext("{n} series", "{n} series", row.size[0]) }} · {{ ngettext("{n} book", "{n} books", row.size[1]) }}</td>
+            <td class="meta">{{ u['last_login_at'][:10] if u['last_login_at'] else _("never") }}</td>
+            <td class="user-actions">
+              {% if u['id'] != me['id'] %}
+                <form action="/admin/users/{{ u['id'] }}/reset" method="post"
+                      onsubmit='return confirm({{ _("Give {name} a new temporary password? Their current one stops working.", name=u["username"]) | tojson }});'>
+                  <button type="submit" class="btn-small">{{ _("Reset password") }}</button>
+                </form>
+                {% if u['id'] != 1 %}
+                  <form action="/admin/users/{{ u['id'] }}/delete" method="post"
+                        onsubmit='return confirm({{ _("Delete {name} and their whole library? This can't be undone.", name=u["username"]) | tojson }});'>
+                    <button type="submit" class="btn-small btn-danger">{{ _("Delete") }}</button>
+                  </form>
+                {% endif %}
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <form action="/admin/users" method="post" class="inline-form new-user">
+      <h3>{{ _("New profile") }}</h3>
+      <input type="text" name="username" placeholder="{{ _('Username') }}" pattern="[A-Za-z0-9_.\-]{2,32}" required
+             aria-label="{{ _('Username') }}" autocomplete="off">
+      <label class="meta"><input type="checkbox" name="is_admin" value="1"> {{ _("Admin (can manage profiles)") }}</label>
+      <button type="submit" class="btn-small btn-accent">{{ _("Create profile") }}</button>
+    </form>
+  </section>
+{% endblock %}
+{% block scripts %}
+<script>
+  (() => {
+    const btn = document.getElementById("copy-pw");
+    if (!btn) return;
+    btn.addEventListener("click", async () => {
+      try { await navigator.clipboard.writeText(document.getElementById("issued-pw").textContent); btn.textContent = {{ _("Copied") | tojson }}; }
+      catch { btn.textContent = {{ _("Select and copy it") | tojson }}; }
+    });
+  })();
+</script>
+{% endblock %}

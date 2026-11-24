@@ -1,0 +1,82 @@
+{# Reading-order research panel on a series page (see research.py). Shown once research was asked for. #}
+{% set rs = research %}
+<section class="card research" id="research">
+  <div class="section-head">
+    <h3>{{ _("Reading-order research") }}</h3>
+    {% if rs.status != 'running' %}
+      <form action="/books/series/{{ s['id'] }}/research/discard" method="post">
+        <button type="submit" class="btn-small">{{ _("Discard") }}</button>
+      </form>
+    {% endif %}
+  </div>
+
+  {% if rs.status == 'running' %}
+    <p class="meta research-running" aria-live="polite"><span class="spinner" aria-hidden="true"></span>
+      {{ _("Researching with web search… this usually takes about a minute. The page refreshes by itself.") }}</p>
+    <script>setTimeout(() => location.reload(), 8000);</script>
+
+  {% elif rs.status == 'failed' %}
+    <div class="notice notice-error">{{ _("The research failed: {error}", error=rs.error) }}</div>
+    <form action="/books/series/{{ s['id'] }}/research" method="post">
+      <button type="submit" class="btn-small btn-accent">{{ _("Try again") }}</button>
+    </form>
+
+  {% else %}
+    {% set r = rs.result %}
+    {% set n_here = rs['items'] | selectattr('where', 'equalto', 'here') | list | length %}
+    {% set n_else = rs['items'] | selectattr('where', 'equalto', 'elsewhere') | list | length %}
+    {% set n_miss = rs['items'] | selectattr('where', 'equalto', 'missing') | list | length %}
+    {% set lines = rs['items'] | map(attribute='line') | reject('none') | unique | list %}
+    <p class="meta">
+      {{ ngettext("{n} title proposed", "{n} titles proposed", rs['items'] | length) }}:
+      {{ _("{n} in this series", n=n_here) }}{% if n_else %}, {{ _("{n} elsewhere in your library", n=n_else) }}{% endif %},
+      {{ _("{n} missing", n=n_miss) }}.
+      {% if r.confidence %}{{ _("Confidence: {level}.", level=_(r.confidence)) }}{% endif %}
+      {% if r.basis %}{{ _("Based on: {basis}.", basis=_(r.basis)) }}{% endif %}
+    </p>
+    <form action="/books/series/{{ s['id'] }}/research/apply" method="post" class="research-form">
+      <ol class="research-list">
+        {% for it in rs['items'] %}
+          <li class="rs-{{ it.where }}">
+            {% if it.where == 'here' %}
+              <span class="rs-mark" title="{{ _('Already in this series') }}">&check;</span>
+            {% else %}
+              <input type="checkbox" name="add" value="{{ it.i }}" checked
+                     aria-label="{{ _('Add {title}', title=it.title) }}">
+            {% endif %}
+            <div class="rs-body">
+              <div>
+                <strong>{{ bt(it.book) if it.book else it.title }}</strong>
+                <span class="meta">
+                  {%- if it.line %} {{ it.line }}{% endif %}{% if it.number %} · {{ it.number }}{% endif %}{% if it.year %} · {{ it.year }}{% endif %}
+                  {%- if it.author and it.where == 'missing' %} · {{ it.author }}{% endif %}
+                </span>
+                {% if it.where == 'missing' %}<span class="tag tag-missing">{{ _("missing") }}</span>
+                {% elif it.where == 'elsewhere' %}<span class="tag">{{ _("in {series}", series=series_names.get(it.book['series_id'], _('your standalone books'))) }}</span>{% endif %}
+              </div>
+              {% if it.note %}<div class="meta">{{ it.note }}</div>{% endif %}
+            </div>
+          </li>
+        {% endfor %}
+      </ol>
+      {% set extra = books | length - n_here %}
+      {% if extra > 0 %}
+        <p class="meta">{{ ngettext("{n} book in this series isn't in the proposal: it goes after the others.", "{n} books in this series aren't in the proposal: they go after the others.", extra) }}</p>
+      {% endif %}
+      {% if r.caveats %}<p class="research-caveats"><strong>{{ _("Caveats:") }}</strong> {{ r.caveats }}</p>{% endif %}
+      {% if r.sources %}
+        <p class="meta research-sources">{{ _("Sources:") }}
+          {% for u in r.sources[:8] %}{% if u is string and u.startswith('http') %}<a href="{{ u }}" target="_blank" rel="noopener noreferrer">{{ u.split('/')[2] }}</a>{% if not loop.last %} · {% endif %}{% endif %}{% endfor %}
+        </p>
+      {% endif %}
+      <div class="research-apply">
+        <label><input type="checkbox" name="reorder" value="1" checked> {{ _("Put the series in this order") }}</label>
+        <label><input type="checkbox" name="build_map" value="1"{% if lines | length > 1 and not map %} checked{% endif %}>
+          {{ _("Build a reading map with one section per line") }}{% if lines | length > 1 %} ({{ lines | join(', ') }}){% endif %}{% if map %} · <span class="warn">{{ _("replaces the current map") }}</span>{% endif %}</label>
+        <p class="meta">{{ _("Ticked missing books are added as manual books and link themselves to Hardcover later. Nothing changes until you apply.") }}</p>
+        <button type="submit" class="btn-small btn-accent">{{ _("Apply") }}</button>
+      </div>
+    </form>
+    <p class="meta">{{ _("Researched {date} with {model}.", date=rs.created_at[:10], model=rs.model) }}</p>
+  {% endif %}
+</section>

@@ -10,15 +10,33 @@ A private, password-protected reading hub with two halves:
 
 No Discord bot, no browser extension. Just a web app behind one password.
 
-## Login
+## Login and profiles
 
-Everything except `/login` and `/static/` sits behind a single password (`APP_PASSWORD`). Logging in sets
+Everything except `/login`, `/lang/` and `/static/` needs a login (username + password). Logging in sets
 an HMAC-signed session cookie (`HttpOnly`, `SameSite=Lax`, `Secure` when served over HTTPS) valid for
-`SESSION_DAYS`. After 5 wrong passwords from one IP within 15 minutes, that IP is locked out until the
+`SESSION_DAYS`. After 5 failed logins from one IP within 15 minutes, that IP is locked out until the
 oldest failure ages out. The app refuses to start without `APP_PASSWORD`, so a missing `.env` line can't
 leave it open.
 
-Changing `APP_PASSWORD` logs out every existing session (unless you set your own `SECRET_KEY`).
+**Profiles.** On first start the app creates the admin profile: username `ADMIN_USERNAME` (default
+`admin`), password `APP_PASSWORD`, and the existing library. From then on:
+
+- the admin's **Profiles** page (header) creates a profile for a friend: pick a username, the app shows a
+  random temporary password **once** (copy button); hand both over;
+- at first login the friend has to choose their own password before they can use anything;
+- **Reset password** issues a new temporary one (and logs that person out everywhere); **Delete** removes
+  the profile and its whole library;
+- everyone changes their own password on the **Account** page (their username in the header). Once the
+  admin changes theirs, `APP_PASSWORD` no longer logs in (it only seeds the first start);
+- passwords are scrypt hashes; a session is tied to the password, so changing it ends other sessions.
+
+Each profile has its **own SQLite file**: the admin keeps `DB_PATH`, the others get `data/users/<id>.db`,
+created empty. Every request is pointed at the logged-in profile's file, so libraries, saved links,
+follows, new-release notifications and reading maps are fully separate (nothing is shared, by
+construction). The background new-release check runs once per profile. AI features (summaries,
+recommendations, reading-order research) use the one 1min.ai key for everybody.
+
+`SECRET_KEY` signs the cookies (derived from `APP_PASSWORD` when empty); changing it logs everyone out.
 
 ## Articles: how it works
 
@@ -156,6 +174,22 @@ the editor lets you add sections and arcs, move books between them, reorder, lab
 set rows/indents for branching rows, and add crossover / side-story lines. Sections with *auto-wire* on are
 joined to the previous one automatically.
 
+### Reading-order research (AI)
+
+**Research reading order (AI)** on a series page asks `MODEL_RESEARCH` (Sonnet by default) with 1min.ai's
+web search on for the recommended reading order of the whole universe: spin-offs, prequels, novellas,
+including books you don't have. It takes about a minute and runs in the background (the page refreshes
+itself). The result is a proposal shown next to your books:
+
+- each title is marked as already in the series (✓), **in another series / standalone**, or **missing**;
+  titles are matched loosely ("Genesis" finds "Arisen: Genesis", "The Shattering" finds "The Shattering:
+  Prelude to Cataclysm");
+- the model's notes, caveats and sources (the author's page when there is one) are listed;
+- **Apply** moves the ticked books in from other series, adds the ticked missing ones as manual books
+  (they link to Hardcover later), puts the series in that order and, optionally, builds a reading map
+  with one section per line (main series, then each spin-off). Nothing changes before you apply;
+  **Discard** drops the proposal.
+
 **Catching up on a long series:** every row on a series page has **✓ Read all above**, which marks
 every earlier book in your read order as Read in one click (skipped books stay skipped).
 
@@ -224,7 +258,7 @@ All settings are environment variables (see `.env.example`):
 | Variable | Default | Notes |
 |---|---|---|
 | `ONE_MIN_API_KEY` | — | required |
-| `APP_PASSWORD` | — | required, the single login password |
+| `APP_PASSWORD` | — | required; the admin profile's first password |
 | `SECRET_KEY` | derived from `APP_PASSWORD` | optional, signs session cookies |
 | `SESSION_DAYS` | `30` | how long a login lasts |
 | `HARDCOVER_TOKEN` | empty | optional, enables series search/import, following and new-release checks (scope `read:catalog`) |
@@ -233,5 +267,7 @@ All settings are environment variables (see `.env.example`):
 | `ONE_MIN_BASE_URL` | `https://api.1min.ai` | |
 | `MODEL_SUMMARIZER` | `us.anthropic.claude-haiku-5-5` | any model ID 1min.ai's `chat-with-ai` accepts |
 | `MODEL_RECOMMENDER` | `us.anthropic.claude-haiku-5-5` | used for book recommendations |
+| `MODEL_RESEARCH` | `us.anthropic.claude-sonnet-5-5` | "Research reading order", with web search |
+| `ADMIN_USERNAME` | `admin` | the admin profile created on first start (password `APP_PASSWORD`) |
 | `DB_PATH` | `/data/read-later.db` | |
 | `MAX_ARTICLE_CHARS` | `20000` | article text is truncated to this before summarizing |

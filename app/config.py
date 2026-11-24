@@ -10,6 +10,9 @@ class Settings(BaseSettings):
     # Used for the Books tab's "Recommend similar" button. Defaults to the same mid-tier model as the
     # summarizer - recommendations are short JSON lists, a flagship model isn't worth the credits.
     model_recommender: str = "us.anthropic.claude-haiku-5-5"
+    # "Research reading order" on a series page: one call with 1min.ai web search on. Sonnet, not Haiku:
+    # it has to read several sources and reconcile them (Perplexity's sonar-pro came back empty in tests).
+    model_research: str = "us.anthropic.claude-sonnet-5-5"
 
     db_path: str = "/data/read-later.db"
 
@@ -21,6 +24,9 @@ class Settings(BaseSettings):
     # Required: the whole app sits behind this single password. The app refuses to start without it,
     # so a missing .env line fails closed instead of silently exposing the app (and the 1min.ai key).
     app_password: str
+    # Profiles (see accounts.py): on first start the existing setup becomes this admin account, with
+    # APP_PASSWORD as its password (changeable in the app afterwards) and the existing library.
+    admin_username: str = "admin"
     # Optional: signs the session cookie. If empty, it's derived from app_password, which means
     # changing the password also logs out every existing session.
     secret_key: str = ""

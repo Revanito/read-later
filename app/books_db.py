@@ -77,6 +77,14 @@ CREATE TABLE IF NOT EXISTS meta (
     key TEXT PRIMARY KEY,
     value TEXT
 );
+CREATE TABLE IF NOT EXISTS order_research (
+    series_id INTEGER PRIMARY KEY,
+    status TEXT NOT NULL,
+    model TEXT,
+    payload TEXT,
+    error TEXT,
+    created_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS book_recs (
     seed_type TEXT NOT NULL,
     seed_id INTEGER NOT NULL,
@@ -349,6 +357,7 @@ def delete_series(series_id: int) -> None:
         # Series folded into this one are empty shells kept for release watching: they go with it.
         conn.execute("DELETE FROM series WHERE merged_into = ?", (series_id,))
         conn.execute("DELETE FROM book_recs WHERE seed_type = 'series' AND seed_id = ?", (series_id,))
+        conn.execute("DELETE FROM order_research WHERE series_id = ?", (series_id,))
         conn.executemany("DELETE FROM book_recs WHERE seed_type = 'book' AND seed_id = ?", [(i,) for i in ids])
         conn.executemany("DELETE FROM lookup_queue WHERE book_id = ?", [(i,) for i in ids])
         _clear_map(conn, series_id)
@@ -442,6 +451,11 @@ def add_book(hit: dict, series_id: int | None = None, position_label: str = "", 
             ),
         )
         return cur.lastrowid
+
+
+def all_books() -> list[sqlite3.Row]:
+    with get_conn() as conn:
+        return conn.execute("SELECT * FROM books ORDER BY id").fetchall()
 
 
 def get_book(book_id: int) -> sqlite3.Row | None:
@@ -580,6 +594,49 @@ def fold_series(src_id: int, dst_id: int) -> dict:
     return stats
 
 
+def get_research(series_id: int) -> sqlite3.Row | None:
+    with get_conn() as conn:
+        return conn.execute("SELECT * FROM order_research WHERE series_id = ?", (series_id,)).fetchone()
+
+
+def start_research(series_id: int, model: str) -> None:
+    with get_conn() as conn:
+        conn.execute(
+            """INSERT INTO order_research (series_id, status, model, payload, error, created_at)
+               VALUES (?, 'running', ?, NULL, NULL, ?)
+               ON CONFLICT(series_id) DO UPDATE SET status = 'running', model = excluded.model, payload = NULL,
+                   error = NULL, created_at = excluded.created_at""",
+            (series_id, model, _now()))
+
+
+def finish_research(series_id: int, payload: str | None, error: str | None) -> None:
+    with get_conn() as conn:
+        conn.execute("UPDATE order_research SET status = ?, payload = ?, error = ? WHERE series_id = ?",
+                     ("failed" if error else "done", payload, error, series_id))
+
+
+def delete_research(series_id: int) -> None:
+    with get_conn() as conn:
+        conn.execute("DELETE FROM order_research WHERE series_id = ?", (series_id,))
+
+
+_LINE_COLORS = ["#7fb6d8", "#d4934a", "#9a9ccf", "#5ec2a3", "#d77fd2", "#d9c04a", "#d07a7a", "#8fb26f"]
+
+
+def build_line_map(series_id: int, lines: list[tuple[str, list[tuple[int, str]]]]) -> None:
+    """Replace the series' map with one single-column section per line (main series, then each
+    spin-off), chained one after the other. lines = [(name, [(book_id, label), ...]), ...]"""
+    clear_map(series_id)
+    set_map_meta(series_id, None, 150)
+    for k, (name, entries) in enumerate(lines):
+        color = _LINE_COLORS[k % len(_LINE_COLORS)]
+        sid = create_section(series_id, "solo", name, color, auto_wire=True)
+        gid = create_group(sid, name, color)
+        for bid, sub in entries:
+            add_entry(gid, bid, sub=sub)
+    renumber_from_map(series_id)
+
+
 def folded_series(series_id: int) -> list[sqlite3.Row]:
     with get_conn() as conn:
         return conn.execute("SELECT * FROM series WHERE merged_into = ? ORDER BY name COLLATE NOCASE",
@@ -604,6 +661,31 @@ def core_title(title: str) -> str:
 
 def titles_match(a: str, b: str) -> bool:
     return _norm_title(a) == _norm_title(b) or core_title(a) == core_title(b)
+
+
+def _title_variants(title: str) -> set[str]:
+    """A title plus the part after its last colon/dash ("Arisen: Genesis" -> "genesis",
+    "Arisen: Operators, Volume II- Pipe Hitters" -> "pipe hitters"), when that part is a real title."""
+    out = {_norm_title(title), core_title(title)}
+    tail = re.split(r"\s*(?::|\s-\s|\s–\s|-\s)\s*", title or "")[-1]
+    if tail and tail != title and len(_norm_title(tail)) >= 4:
+        out.add(_norm_title(tail))
+    return {v for v in out if v}
+
+
+def loose_title_match(mine: str, proposed: str) -> bool:
+    """Same book under a series-prefixed or subtitled name: used to line up an AI-proposed reading
+    order with the books in a series (never to decide duplicates on its own)."""
+    return titles_match(mine, proposed) or bool(_title_variants(mine) & _title_variants(proposed))
+
+
+def head_title_match(mine: str, proposed: str) -> bool:
+    """One side is the other minus its subtitle ("The Shattering" / "The Shattering: Prelude to
+    Cataclysm"). Weaker than loose_title_match: only tried for books nothing else matched."""
+    def head(t):
+        return _norm_title(re.split(r"\s*:\s*", t or "", maxsplit=1)[0]) if ":" in (t or "") else ""
+    a, b = head(mine), head(proposed)
+    return bool((a and len(a) >= 4 and a == _norm_title(proposed)) or (b and len(b) >= 4 and b == _norm_title(mine)))
 
 
 def author_surnames(authors: str | None) -> set[str]:

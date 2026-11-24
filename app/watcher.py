@@ -9,6 +9,7 @@ import asyncio
 import logging
 from datetime import date, datetime, timedelta, timezone
 
+import accounts
 import books_db
 import hardcover
 import openlibrary
@@ -200,9 +201,12 @@ async def fill_french_titles(series_id: int | None = None) -> tuple[int, int]:
 async def loop() -> None:
     await asyncio.sleep(20)  # let the app finish starting before the first check
     while True:
-        try:
-            if hardcover.enabled() and _is_due():
-                await run_check()
-        except Exception:
-            log.exception("new-release check crashed")
+        # Every profile has its own follows, series and notifications (and its own last-check time).
+        for user in accounts.list_users():
+            try:
+                accounts.activate(user)
+                if hardcover.enabled() and _is_due():
+                    await run_check()
+            except Exception:
+                log.exception("new-release check crashed for %s", user["username"])
         await asyncio.sleep(_TICK_SECONDS)

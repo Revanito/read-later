@@ -1,6 +1,7 @@
 import hashlib
 import sqlite3
 from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import datetime, timezone
 
 from config import settings
@@ -29,9 +30,25 @@ def article_id(url: str) -> str:
     return hashlib.sha256(url.encode("utf-8")).hexdigest()[:16]
 
 
+# Which profile's file this request / task uses (see accounts.py). Unset = the admin's DB_PATH.
+_path: ContextVar[str | None] = ContextVar("rl_db_path", default=None)
+
+
+def use_path(path: str):
+    return _path.set(path)
+
+
+def reset_path(token) -> None:
+    _path.reset(token)
+
+
+def current_path() -> str:
+    return _path.get() or settings.db_path
+
+
 @contextmanager
 def get_conn():
-    conn = sqlite3.connect(settings.db_path)
+    conn = sqlite3.connect(current_path())
     conn.row_factory = sqlite3.Row
     try:
         yield conn

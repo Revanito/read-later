@@ -3,6 +3,7 @@ from datetime import date
 
 from fastapi.templating import Jinja2Templates
 
+import accounts
 import books_db
 import hardcover
 import i18n
@@ -29,4 +30,5 @@ templates.env.globals.update(
     js_texts=i18n.js_texts,
     bt=books_db.display_title,
     sn=books_db.display_name,
+    current_user=accounts.current,
 )

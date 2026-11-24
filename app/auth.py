@@ -1,7 +1,8 @@
-"""Single-password auth: a login form that sets an HMAC-signed, expiring session cookie.
+"""Login: username + password (accounts.py), then an HMAC-signed, expiring session cookie.
 
-No user table and no extra dependency - the cookie is just `<expiry>.<hmac(expiry)>`. Anything that
-isn't /login or /static redirects to the login page until that cookie checks out.
+The cookie is `<user id>.<expiry>.<hmac>`; the signature also covers a slice of the user's password
+hash, so changing or resetting a password logs out that user's other sessions. Anything that isn't
+/login, /static or /lang redirects to the login page until the cookie checks out.
 """
 import hashlib
 import hmac
@@ -10,6 +11,7 @@ from collections import defaultdict, deque
 
 from fastapi.requests import Request
 
+import accounts
 from config import settings
 
 COOKIE_NAME = "rl_session"
@@ -33,22 +35,28 @@ def _sign(payload: str) -> str:
     return hmac.new(_secret(), payload.encode("utf-8"), hashlib.sha256).hexdigest()
 
 
-def make_session_token() -> str:
+def _payload(user, expiry: str) -> str:
+    return f"v2:{user['id']}:{expiry}:{user['pw_hash'][-16:]}"
+
+
+def make_session_token(user) -> str:
     expiry = str(int(time.time()) + settings.session_days * 86400)
-    return f"{expiry}.{_sign('v1:' + expiry)}"
+    return f"{user['id']}.{expiry}.{_sign(_payload(user, expiry))}"
+
+
+def user_from_token(token: str | None):
+    """The logged-in user for a session cookie, or None (expired, tampered, password changed, deleted)."""
+    parts = (token or "").split(".")
+    if len(parts) != 3 or not parts[0].isdigit() or not parts[1].isdigit() or int(parts[1]) < time.time():
+        return None
+    user = accounts.get_user(int(parts[0]))
+    if user is None or not hmac.compare_digest(parts[2], _sign(_payload(user, parts[1]))):
+        return None
+    return user
 
 
 def is_valid_token(token: str | None) -> bool:
-    if not token or "." not in token:
-        return False
-    expiry, sig = token.split(".", 1)
-    if not expiry.isdigit() or int(expiry) < time.time():
-        return False
-    return hmac.compare_digest(sig, _sign("v1:" + expiry))
-
-
-def check_password(candidate: str) -> bool:
-    return hmac.compare_digest(candidate.encode("utf-8"), settings.app_password.encode("utf-8"))
+    return user_from_token(token) is not None
 
 
 def client_ip(request: Request) -> str:
