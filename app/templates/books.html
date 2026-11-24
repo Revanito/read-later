@@ -1,54 +1,54 @@
 {% extends "base.html" %}
 {% import "_books.html" as ui %}
-{% block title %}Books - read-later{% endblock %}
+{% block title %}{{ _("Books") }} - read-later{% endblock %}
 {% block main_class %}wide{% endblock %}
 {% block content %}
   <form action="/books/search" method="get" class="book-search">
-    <input type="search" name="q" placeholder="Search a book, author or series..." required>
-    <select name="type" aria-label="Search for">
-      <option value="book">Books</option>
-      <option value="series"{% if not hardcover_enabled %} disabled{% endif %}>Series{% if not hardcover_enabled %} (needs Hardcover){% endif %}</option>
+    <input type="search" name="q" placeholder="{{ _('Search a book, author or series...') }}" required>
+    <select name="type" aria-label="{{ _('Search for') }}">
+      <option value="book">{{ _("Books") }}</option>
+      <option value="series"{% if not hardcover_enabled %} disabled{% endif %}>{{ _("Series") }}{% if not hardcover_enabled %} {{ _("(needs Hardcover)") }}{% endif %}</option>
     </select>
-    <button type="submit">Search</button>
+    <button type="submit">{{ _("Search") }}</button>
   </form>
 
   <div class="toolbar">
     <div class="toolbar-right">
-      <a class="btn-small" href="/books/new">New releases &amp; following</a>
-      <a class="btn-small" href="/books/presets">Reading-map presets</a>
+      <a class="btn-small" href="/books/new">{{ _("New releases & following") }}</a>
+      <a class="btn-small" href="/books/presets">{{ _("Reading-map presets") }}</a>
       <details class="inline-form">
-        <summary class="btn-small">+ New series</summary>
+        <summary class="btn-small">{{ _("+ New series") }}</summary>
         <form action="/books/series/new" method="post">
-          <input type="text" name="name" placeholder="Series name" required>
-          <input type="text" name="author" placeholder="Author (optional)">
-          <button type="submit" class="btn-small btn-accent">Create</button>
+          <input type="text" name="name" placeholder="{{ _('Series name') }}" required>
+          <input type="text" name="author" placeholder="{{ _('Author (optional)') }}">
+          <button type="submit" class="btn-small btn-accent">{{ _("Create") }}</button>
         </form>
       </details>
     </div>
   </div>
 
-  <h2 class="section-title">Series</h2>
+  <h2 class="section-title">{{ _("Series") }}</h2>
   {% if not series_list %}
     <p class="empty">
-      {% if finished_series %}No series in progress. Your finished ones are under Already read.{% else %}No series yet.{% endif %}
-      Search for one above{% if hardcover_enabled %} (pick “Series” to import a whole read order){% endif %}.
+      {% if finished_series %}{{ _("No series in progress. Your finished ones are under Already read.") }}{% else %}{{ _("No series yet.") }}{% endif %}
+      {% if hardcover_enabled %}{{ _("Search for one above (pick “Series” to import a whole read order).") }}{% else %}{{ _("Search for one above.") }}{% endif %}
     </p>
   {% endif %}
   <div class="series-grid">
     {% for entry in series_list %}{% include "_series_card.html" %}{% endfor %}
   </div>
 
-  <h2 class="section-title">Standalone books</h2>
+  <h2 class="section-title">{{ _("Standalone books") }}</h2>
   {% if not standalone %}
-    <p class="empty">Nothing on the pile.</p>
+    <p class="empty">{{ _("Nothing on the pile.") }}</p>
   {% endif %}
   <div class="book-rows">
     {% for b in standalone %}
       <div class="book-row">
-        <a href="/books/book/{{ b['id'] }}">{{ ui.cover(b['cover_url'], b['title'], 'sm') }}</a>
+        <a href="/books/book/{{ b['id'] }}">{{ ui.cover(b['cover_url'], bt(b), 'sm') }}</a>
         <div class="book-row-body">
-          <a class="next-title" href="/books/book/{{ b['id'] }}">{{ b['title'] }}</a>
-          <div class="meta">{{ b['author'] or 'Unknown author' }}{% if b['year'] %} &middot; {{ b['year'] }}{% endif %}</div>
+          <a class="next-title" href="/books/book/{{ b['id'] }}">{{ bt(b) }}</a>
+          <div class="meta">{{ b['author'] or _("Unknown author") }}{% if b['year'] %} &middot; {{ b['year'] }}{% endif %}</div>
         </div>
         {{ ui.status_select(b, '/books') }}
       </div>
@@ -56,8 +56,8 @@
   </div>
 
   {% if finished_series or read_standalone %}
-    <h2 class="section-title" id="already-read">Already read
-      <span class="meta">{{ finished_series | length }} series, {{ read_standalone | length }} standalone</span>
+    <h2 class="section-title" id="already-read">{{ _("Already read") }}
+      <span class="meta">{{ ngettext("{n} series", "{n} series", finished_series | length) }}, {{ ngettext("{n} standalone", "{n} standalone", read_standalone | length) }}</span>
     </h2>
     {% if finished_series %}
       <div class="series-grid">
@@ -68,12 +68,12 @@
       <div class="book-rows{% if finished_series %} rows-after-grid{% endif %}">
         {% for b in read_standalone %}
           <div class="book-row">
-            <a href="/books/book/{{ b['id'] }}">{{ ui.cover(b['cover_url'], b['title'], 'sm') }}</a>
+            <a href="/books/book/{{ b['id'] }}">{{ ui.cover(b['cover_url'], bt(b), 'sm') }}</a>
             <div class="book-row-body">
-              <a class="next-title" href="/books/book/{{ b['id'] }}">{{ b['title'] }}</a>
+              <a class="next-title" href="/books/book/{{ b['id'] }}">{{ bt(b) }}</a>
               <div class="meta">
-                {{ b['author'] or 'Unknown author' }}{% if b['year'] %} &middot; {{ b['year'] }}{% endif %}
-                {% if b['finished_at'] %} &middot; finished {{ b['finished_at'][:10] }}{% endif %}
+                {{ b['author'] or _("Unknown author") }}{% if b['year'] %} &middot; {{ b['year'] }}{% endif %}
+                {% if b['finished_at'] %} &middot; {{ _("finished {date}", date=b['finished_at'][:10]) }}{% endif %}
               </div>
             </div>
             {{ ui.status_select(b, '/books#already-read') }}

@@ -2,17 +2,17 @@
 {% block main_class %}wide{% endblock %}
 {% block content %}
   <form action="/add" method="post" class="add-form home-add">
-    <input type="url" name="url" placeholder="Paste a link..." required autofocus>
-    <button type="submit">Save &amp; summarize</button>
+    <input type="url" name="url" placeholder="{{ _('Paste a link...') }}" required autofocus>
+    <button type="submit">{{ _("Save & summarize") }}</button>
   </form>
 
   <div class="subtabs">
-    <a class="nav-link{% if not archived %} active{% endif %}" href="/">Inbox</a>
-    <a class="nav-link{% if archived %} active{% endif %}" href="/?archived=true">Archived</a>
+    <a class="nav-link{% if not archived %} active{% endif %}" href="/">{{ _("Inbox") }}</a>
+    <a class="nav-link{% if archived %} active{% endif %}" href="/?archived=true">{{ _("Archived") }}</a>
   </div>
 
   {% if not items %}
-    <p class="empty">{% if archived %}Nothing archived yet.{% else %}Nothing saved yet. Paste a link above.{% endif %}</p>
+    <p class="empty">{% if archived %}{{ _("Nothing archived yet.") }}{% else %}{{ _("Nothing saved yet. Paste a link above.") }}{% endif %}</p>
   {% endif %}
   <div class="article-grid">
     {% for a in items %}
@@ -20,8 +20,8 @@
         <h2><a href="/articles/{{ a['id'] }}">{{ a['title'] or a['url'] }}</a></h2>
         <div class="meta">
           {{ a['domain'] }} &middot; {{ a['added_at'][:10] }}
-          {% if a['read_at'] %} &middot; read{% endif %}
-          {% if a['status'] == 'failed' %}<span class="badge-failed">failed</span>{% endif %}
+          {% if a['read_at'] %} &middot; {{ _("read") }}{% endif %}
+          {% if a['status'] == 'failed' %}<span class="badge-failed">{{ _("failed") }}</span>{% endif %}
         </div>
         {% if a['summary'] %}<div class="summary">{{ a['summary'] }}</div>{% endif %}
         {% if a['tags'] %}

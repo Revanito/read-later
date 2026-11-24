@@ -3,11 +3,11 @@
 {% block title %}{{ subject }} - read-later{% endblock %}
 {% block main_class %}wide{% endblock %}
 {% block content %}
-  <a class="back" href="javascript:history.back()">&larr; Back</a>
+  <a class="back" href="javascript:history.back()">&larr; {{ _("Back") }}</a>
   <h2 class="page-title">{{ subject }}</h2>
-  <p class="meta">Top-rated Open Library books with this subject.</p>
+  <p class="meta">{{ _("Top-rated Open Library books with this subject.") }}</p>
   {% for e in errors %}<div class="notice notice-error">{{ e }}</div>{% endfor %}
-  {% if not hits and not errors %}<p class="empty">Nothing found for this subject.</p>{% endif %}
+  {% if not hits and not errors %}<p class="empty">{{ _("Nothing found for this subject.") }}</p>{% endif %}
   <div class="hit-grid">
     {% for h in hits %}{{ ui.hit_card(h, all_series, target_series) }}{% endfor %}
   </div>

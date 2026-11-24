@@ -14,7 +14,7 @@ from config import settings
 
 COOKIE_NAME = "rl_session"
 
-_PUBLIC_PREFIXES = ("/login", "/static/")
+_PUBLIC_PREFIXES = ("/login", "/static/", "/lang/")
 
 # Brute-force brake: after this many failed logins from one IP inside the window, that IP is
 # refused until the oldest failure ages out.

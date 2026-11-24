@@ -212,6 +212,50 @@ async def search_series(query: str, limit: int = 8) -> list[dict]:
     return [s for s in (_series_hit(d) for d in _hits(data)) if s["hc_id"]]
 
 
+_FRENCH_QUERY = """
+query FrenchEditions($ids: [Int!]!) {
+  books(where: {id: {_in: $ids}}) {
+    id
+    title
+    editions(where: {language: {code2: {_eq: "fr"}}}, order_by: {users_count: desc}, limit: 3) { title }
+  }
+}
+"""
+_FR_BATCH = 100
+
+
+def clean_french_title(fr: str, original: str) -> str:
+    """French edition titles often carry the subtitle glued on ("Némésis: la guerre des ombres",
+    "Prospero brûle : Les Loups sont lâchés"). Keep the part before the colon unless the original
+    title has a colon too (then the colon is part of the real title)."""
+    fr = " ".join((fr or "").split())
+    original = original or ""
+    if ":" in fr and ":" not in original:
+        head = fr.split(":", 1)[0].strip()
+        if len(head) >= 3:
+            fr = head
+    # Same with ", Subtitle" ("Corax, Plus jamais"), when the original title has no colon or comma of its own.
+    if ":" not in original and "," not in original:
+        head, sep, tail = fr.partition(", ")
+        if sep and len(head) >= 3 and tail[:1].isupper():
+            fr = head
+    return fr[:1].upper() + fr[1:] if fr else fr
+
+
+async def french_titles(hc_ids: list[int]) -> dict[int, str]:
+    """Most popular French edition title per Hardcover book id (books without one are left out).
+    One request per batch of 100 ids."""
+    out: dict[int, str] = {}
+    ids = [i for i in dict.fromkeys(hc_ids) if i]
+    for k in range(0, len(ids), _FR_BATCH):
+        data = await _query(_FRENCH_QUERY, {"ids": ids[k:k + _FR_BATCH]})
+        for b in data.get("books") or []:
+            eds = [e.get("title") for e in (b.get("editions") or []) if (e or {}).get("title")]
+            if eds and b.get("id"):
+                out[int(b["id"])] = clean_french_title(eds[0], b.get("title") or "")
+    return out
+
+
 async def search_authors(query: str, limit: int = 6) -> list[dict]:
     data = await _query(_SEARCH_QUERY, {"q": query, "type": "Author", "perPage": limit})
     out = []

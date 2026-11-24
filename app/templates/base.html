@@ -1,20 +1,22 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="{{ lang() }}">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{% block title %}read-later{% endblock %}</title>
   <link rel="icon" type="image/png" href="/static/favicon.png?v={{ favicon_version }}">
   <link rel="stylesheet" href="/static/style.css?v={{ css_version }}">
+  <script>window.RL_LANG = {{ lang() | tojson }}; window.RL_TEXT = {{ js_texts() | tojson }};</script>
 </head>
 <body>
   <header>
     <h1><a href="/">read-later</a></h1>
     <nav class="tabs">
-      <a href="/" class="tab{% if tab == 'save' %} active{% endif %}">Save link</a>
-      <a href="/books" class="tab{% if tab == 'books' %} active{% endif %}">Books</a>
+      <a href="/" class="tab{% if tab == 'save' %} active{% endif %}">{{ _("Save link") }}</a>
+      <a href="/books" class="tab{% if tab == 'books' %} active{% endif %}">{{ _("Books") }}</a>
     </nav>
-    <form action="/logout" method="post" class="logout"><button type="submit">Log out</button></form>
+    {% include "_flags.html" %}
+    <form action="/logout" method="post" class="logout"><button type="submit">{{ _("Log out") }}</button></form>
   </header>
   {% include "_release_panel.html" %}
 

@@ -5,21 +5,21 @@
 {% set rels = new_releases() if request.url.path != '/books/new' else [] %}
 {% if rels %}
   {% set here = request.url.path ~ ('?' ~ request.url.query if request.url.query else '') %}
-  <button type="button" class="rel-pill" id="rel-pill" hidden>{{ rels | length }} new release{{ 's' if rels | length != 1 }}</button>
-  <aside class="rel-panel" id="rel-panel" data-key="{{ rels | map(attribute='hc_id') | join('-') }}" aria-label="New releases">
+  <button type="button" class="rel-pill" id="rel-pill" hidden>{{ ngettext("{n} new release", "{n} new releases", rels | length) }}</button>
+  <aside class="rel-panel" id="rel-panel" data-key="{{ rels | map(attribute='hc_id') | join('-') }}" aria-label="{{ _('New releases') }}">
     <div class="rel-head">
-      <strong>New releases</strong>
+      <strong>{{ _("New releases") }}</strong>
       <span class="rel-count">{{ rels | length }}</span>
-      <button type="button" class="rel-close" aria-label="Hide for now" title="Hide for now">&times;</button>
+      <button type="button" class="rel-close" aria-label="{{ _('Hide for now') }}" title="{{ _('Hide for now') }}">&times;</button>
     </div>
     <ul class="rel-list">
       {% for r in rels %}{{ ui.release_item(r, here, extra=loop.index > 3) }}{% endfor %}
     </ul>
     <div class="rel-foot">
       {% if rels | length > 3 %}
-        <button type="button" class="rel-more">Show {{ rels | length - 3 }} more</button>
+        <button type="button" class="rel-more">{{ _("Show {n} more", n=rels | length - 3) }}</button>
       {% endif %}
-      <a href="/books/new">Followed authors &rarr;</a>
+      <a href="/books/new">{{ _("Followed authors") }} &rarr;</a>
     </div>
   </aside>
   <script>

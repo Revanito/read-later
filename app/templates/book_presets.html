@@ -1,30 +1,31 @@
 {% extends "base.html" %}
-{% block title %}Reading-map presets - read-later{% endblock %}
+{% block title %}{{ _("Reading-map presets") }} - read-later{% endblock %}
 {% block content %}
-  <a class="back" href="/books">&larr; Books</a>
-  <h2 class="page-title">Reading-map presets</h2>
-  <p class="meta">A preset builds a series' reading map in one go: arcs, sections and the lines between them. Books you already have are matched by title (and pulled in from related series); the rest are added as manual books. Anything else in the series stays, under “Not placed in the map yet”.</p>
+  <a class="back" href="/books">&larr; {{ _("Books") }}</a>
+  <h2 class="page-title">{{ _("Reading-map presets") }}</h2>
+  <p class="meta">{{ _("A preset builds a series' reading map in one go: arcs, sections and the lines between them. Books you already have are matched by title (and pulled in from related series); the rest are added as manual books. Anything else in the series stays, under “Not placed in the map yet”.") }}</p>
 
   {% for it in items %}
     {% set p = it.p %}
+    {% set pname = p.name_fr if lang() == 'fr' and p.name_fr else p.name %}
     <section class="card preset-card">
-      <h3>{{ p.name }}</h3>
-      <p class="summary">{{ p.description }}</p>
-      <p class="meta">{{ it.size }} titles</p>
+      <h3>{{ pname }}</h3>
+      <p class="summary">{{ p.description_fr if lang() == 'fr' and p.description_fr else p.description }}</p>
+      <p class="meta">{{ ngettext("{n} title", "{n} titles", it.size) }}</p>
       <form action="/books/presets/{{ p.key }}/apply" method="post" class="stack-form preset-form">
-        <label>Apply to
+        <label>{{ _("Apply to") }}
           <select name="series_id">
-            <option value="new" data-match="1">A new series called “{{ p.name }}”</option>
+            <option value="new" data-match="1">{{ _("A new series called “{name}”", name=pname) }}</option>
             {% set pick = preselect or it.guess %}
             {% for s in all_series %}
               {% set fits = p.match_series | select('in', s['name'] | lower) | list %}
-              <option value="{{ s['id'] }}" data-match="{{ 1 if fits else 0 }}"{% if pick == s['id'] %} selected{% endif %}>{{ s['name'] }}</option>
+              <option value="{{ s['id'] }}" data-match="{{ 1 if fits else 0 }}"{% if pick == s['id'] %} selected{% endif %}>{{ sn(s) }}</option>
             {% endfor %}
           </select>
         </label>
-        <p class="form-error preset-warn" hidden>This series' name doesn't look like {{ p.name }}. Applying replaces its reading map and adds {{ p.name }}'s books to it. Double-check it's the right one.</p>
-        <label class="check"><input type="checkbox" name="mark_unread" value="1" checked> Mark every book in the map as unread (you tick what you've read afterwards)</label>
-        <button type="submit" class="btn-small btn-accent">Apply preset</button>
+        <p class="form-error preset-warn" hidden>{{ _("This series' name doesn't look like {name}. Applying replaces its reading map and adds {name}'s books to it. Double-check it's the right one.", name=pname) }}</p>
+        <label class="check"><input type="checkbox" name="mark_unread" value="1" checked> {{ _("Mark every book in the map as unread (you tick what you've read afterwards)") }}</label>
+        <button type="submit" class="btn-small btn-accent">{{ _("Apply preset") }}</button>
       </form>
     </section>
   {% endfor %}
@@ -32,6 +33,7 @@
   <script>
     // Warn before applying a preset to a series whose name doesn't match it (e.g. Discworld onto the Heresy).
     document.querySelectorAll('.preset-form').forEach((form) => {
+      const T = window.RL_TEXT || {};
       const sel = form.querySelector('select[name="series_id"]');
       const warn = form.querySelector('.preset-warn');
       const update = () => { warn.hidden = sel.selectedOptions[0].dataset.match === '1'; };
@@ -39,15 +41,16 @@
       update();
       form.addEventListener('submit', (e) => {
         const opt = sel.selectedOptions[0];
-        const target = opt.value === 'new' ? 'a new series' : '“' + opt.textContent.trim() + '”';
-        const extra = opt.dataset.match === '1' ? '' : '\n\nWARNING: that series doesn’t look like this preset.';
-        if (!confirm('Apply this preset to ' + target + '? Any reading map it already has is replaced.' + extra)) e.preventDefault();
+        const target = opt.value === 'new' ? T['a new series'] : '“' + opt.textContent.trim() + '”';
+        const extra = opt.dataset.match === '1' ? '' : '\n\n' + T["WARNING: that series doesn't look like this preset."];
+        const msg = T["Apply this preset to {target}? Any reading map it already has is replaced."].replace('{target}', target);
+        if (!confirm(msg + extra)) e.preventDefault();
       });
     });
   </script>
 
   <section class="card preset-card">
-    <h3>Any other series</h3>
-    <p class="summary">Open the series and press <strong>+ Build a reading map</strong>: it starts as one arc with every book, then you add sections and arcs, move books into them and draw crossovers.</p>
+    <h3>{{ _("Any other series") }}</h3>
+    <p class="summary">{{ _("Open the series and press “+ Build a reading map”: it starts as one arc with every book, then you add sections and arcs, move books into them and draw crossovers.") }}</p>
   </section>
 {% endblock %}

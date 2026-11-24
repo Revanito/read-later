@@ -11,12 +11,12 @@
 {% macro status_select(b, next) -%}
   <form action="/books/book/{{ b['id'] }}/status" method="post" class="status-form">
     <input type="hidden" name="next" value="{{ next }}">
-    <select name="status" class="status-select status-{{ b['status'] }}" onchange="this.form.requestSubmit()" aria-label="Status">
+    <select name="status" class="status-select status-{{ b['status'] }}" onchange="this.form.requestSubmit()" aria-label="{{ _('Status') }}">
       {% for key, label in STATUSES.items() %}
-        <option value="{{ key }}"{% if b['status'] == key %} selected{% endif %}>{{ label }}</option>
+        <option value="{{ key }}"{% if b['status'] == key %} selected{% endif %}>{{ _(label) }}</option>
       {% endfor %}
     </select>
-    <noscript><button type="submit">Set</button></noscript>
+    <noscript><button type="submit">{{ _("Set") }}</button></noscript>
   </form>
 {%- endmacro %}
 
@@ -35,21 +35,21 @@
     <div class="hit-body">
       <div class="hit-title">{{ h.title }}</div>
       <div class="meta">
-        {{ h.author or 'Unknown author' }}{% if h.year %} &middot; {{ h.year }}{% endif %}
+        {{ h.author or _("Unknown author") }}{% if h.year %} &middot; {{ h.year }}{% endif %}
         &middot; <span class="src src-{{ h.source }}">{{ 'Hardcover' if h.source == 'hc' else 'Open Library' }}</span>
       </div>
       {% if h.series %}
-        <div class="meta">#{{ h.series.position or '?' }} in <strong>{{ h.series.name }}</strong></div>
+        <div class="meta">{{ _("#{pos} in {series}", pos=(h.series.position or '?'), series=h.series.name) }}</div>
       {% endif %}
 
       {% if h.saved_id %}
-        <a class="btn-small" href="/books/book/{{ h.saved_id }}">In your library &rarr;</a>
+        <a class="btn-small" href="/books/book/{{ h.saved_id }}">{{ _("In your library") }} &rarr;</a>
       {% else %}
         <div class="hit-actions">
           {% if h.series and h.series.hc_id and not h.series.local_id and not target_series %}
             <form action="/books/import-series" method="post">
               <input type="hidden" name="hc_id" value="{{ h.series.hc_id }}">
-              <button type="submit" class="btn-small btn-accent">Import whole series</button>
+              <button type="submit" class="btn-small btn-accent">{{ _("Import whole series") }}</button>
             </form>
           {% endif %}
           <form action="/books/add" method="post" class="add-hit">
@@ -59,15 +59,15 @@
             <input type="hidden" name="subjects" value="{{ h.subjects | join(',') }}">
             <input type="hidden" name="position" value="{{ h.series.position if h.series else '' }}">
             {% set preselect = target_series['id'] if target_series else (h.series.local_id if h.series else none) %}
-            <select name="series_id" class="series-pick" aria-label="Series">
-              <option value="">Standalone</option>
+            <select name="series_id" class="series-pick" aria-label="{{ _('Series') }}">
+              <option value="">{{ _("Standalone") }}</option>
               {% for s in all_series %}
-                <option value="{{ s['id'] }}"{% if preselect == s['id'] %} selected{% endif %}>{{ s['name'] }}</option>
+                <option value="{{ s['id'] }}"{% if preselect == s['id'] %} selected{% endif %}>{{ sn(s) }}</option>
               {% endfor %}
-              <option value="new">+ New series&hellip;</option>
+              <option value="new">{{ _("+ New series…") }}</option>
             </select>
-            <input type="text" name="new_series" class="new-series" placeholder="Series name" value="{{ h.series.name if h.series else '' }}" hidden>
-            <button type="submit" class="btn-small">{{ 'Add just this book' if h.series and not h.series.local_id and not target_series else 'Add' }}</button>
+            <input type="text" name="new_series" class="new-series" placeholder="{{ _('Series name') }}" value="{{ h.series.name if h.series else '' }}" hidden>
+            <button type="submit" class="btn-small">{{ _("Add just this book") if h.series and not h.series.local_id and not target_series else _("Add") }}</button>
           </form>
         </div>
       {% endif %}
@@ -78,10 +78,10 @@
 {% macro recs_block(recs, post_url) -%}
   <section class="card recs" id="recs">
     <div class="section-head">
-      <h3>More like this</h3>
-      <form action="{{ post_url }}" method="post" onsubmit="this.querySelector('button').disabled=true; this.querySelector('button').textContent='Thinking…';">
-        <button type="submit" class="btn-small" title="Asks the AI model, uses 1min.ai credits">
-          {{ 'Refresh AI picks' if recs else 'Recommend similar (AI)' }}
+      <h3>{{ _("More like this") }}</h3>
+      <form action="{{ post_url }}" method="post" onsubmit='this.querySelector("button").disabled=true; this.querySelector("button").textContent={{ _("Thinking…") | tojson }};'>
+        <button type="submit" class="btn-small" title="{{ _('Asks the AI model, uses 1min.ai credits') }}">
+          {{ _("Refresh AI picks") if recs else _("Recommend similar (AI)") }}
         </button>
       </form>
     </div>
@@ -90,19 +90,19 @@
         {% for r in recs['items'] %}
           <li>
             <div>
-              <strong>{{ r.title }}</strong>{% if r.author %} <span class="meta">by {{ r.author }}</span>{% endif %}
-              <span class="tag">{{ r.type }}</span>
+              <strong>{{ r.title }}</strong>{% if r.author %} <span class="meta">{{ _("by {author}", author=r.author) }}</span>{% endif %}
+              <span class="tag">{{ _(r.type) }}</span>
             </div>
             {% if r.why %}<div class="meta">{{ r.why }}</div>{% endif %}
-            <a class="btn-link" href="/books/search?q={{ (r.title ~ ' ' ~ r.author) | urlencode }}&type={{ r.type }}">Find &rarr;</a>
+            <a class="btn-link" href="/books/search?q={{ (r.title ~ ' ' ~ r.author) | urlencode }}&type={{ r.type }}">{{ _("Find") }} &rarr;</a>
           </li>
         {% endfor %}
       </ul>
-      <p class="meta">Generated {{ recs['created_at'][:10] }}.</p>
+      <p class="meta">{{ _("Generated {date}.", date=recs['created_at'][:10]) }}</p>
     {% elif not recs %}
-      <p class="meta">Browse a subject above for free, or ask the AI for picks that aren't in your library yet.</p>
+      <p class="meta">{{ _("Browse a subject above for free, or ask the AI for picks that aren't in your library yet.") }}</p>
     {% else %}
-      <p class="meta">The model didn't return anything usable. Try again.</p>
+      <p class="meta">{{ _("The model didn't return anything usable. Try again.") }}</p>
     {% endif %}
   </section>
 {%- endmacro %}
@@ -118,16 +118,16 @@
         <span class="rel-title">{{ r.title }}</span>
       {% endif %}
       <div class="meta">
-        {{ r.author or 'Unknown author' }}{% if r.series_name %} &middot; {% if r.position %}#{{ r.position }} in {% endif %}{{ r.series_name }}{% endif %}
+        {{ r.author or _("Unknown author") }}{% if r.series_name %} &middot; {% if r.position %}{{ _("#{pos} in {series}", pos=r.position, series=r.series_name) }}{% else %}{{ r.series_name }}{% endif %}{% endif %}
       </div>
       <div class="rel-when {{ 'rel-out' if r.out_now else 'rel-soon' }}">
-        {{ 'Out now' if r.out_now else 'Coming' }} &middot; {{ r.release_date }}
-        {% if r.owned %}<span class="meta">&middot; in your library</span>{% endif %}
+        {{ _("Out now") if r.out_now else _("Coming") }} &middot; {{ r.release_date }}
+        {% if r.owned %}<span class="meta">&middot; {{ _("in your library") }}</span>{% endif %}
       </div>
     </div>
     <div class="rel-actions">
       {% if r.saved_id %}
-        <a class="btn-small" href="/books/book/{{ r.saved_id }}">Open</a>
+        <a class="btn-small" href="/books/book/{{ r.saved_id }}">{{ _("Open") }}</a>
       {% elif not r.owned %}
         <form action="/books/add" method="post">
           <input type="hidden" name="title" value="{{ r.title }}">
@@ -138,12 +138,12 @@
           <input type="hidden" name="hc_slug" value="{{ r.hc_slug or '' }}">
           <input type="hidden" name="position" value="{{ r.position or '' }}">
           <input type="hidden" name="series_id" value="{{ r.local_series_id or '' }}">
-          <button type="submit" class="btn-small btn-accent" title="{{ 'Add to ' ~ r.series_name if r.local_series_id else 'Add as a standalone book' }}">Add</button>
+          <button type="submit" class="btn-small btn-accent" title="{{ _('Add to {series}', series=r.series_name) if r.local_series_id else _('Add as a standalone book') }}">{{ _("Add") }}</button>
         </form>
       {% endif %}
       <form action="/books/new/{{ r.hc_id }}/dismiss" method="post">
         <input type="hidden" name="next" value="{{ next }}">
-        <button type="submit" class="rel-dismiss" title="Dismiss" aria-label="Dismiss {{ r.title }}">&times;</button>
+        <button type="submit" class="rel-dismiss" title="{{ _('Dismiss') }}" aria-label="{{ _('Dismiss {title}', title=r.title) }}">&times;</button>
       </form>
     </div>
   </li>
@@ -161,13 +161,13 @@
             <form action="/books/unfollow" method="post">
               <input type="hidden" name="hc_id" value="{{ fmap[norm_name(name)] }}">
               <input type="hidden" name="next" value="{{ next }}">
-              <button type="submit" class="follow-btn following" title="Click to stop following">&check; Following {{ name }}</button>
+              <button type="submit" class="follow-btn following" title="{{ _('Click to stop following') }}">&check; {{ _("Following {name}", name=name) }}</button>
             </form>
           {% else %}
             <form action="/books/follow" method="post">
               <input type="hidden" name="name" value="{{ name }}">
               <input type="hidden" name="next" value="{{ next }}">
-              <button type="submit" class="follow-btn" title="Get notified about new books by {{ name }}">+ Follow {{ name }}</button>
+              <button type="submit" class="follow-btn" title="{{ _('Get notified about new books by {name}', name=name) }}">{{ _("+ Follow {name}", name=name) }}</button>
             </form>
           {% endif %}
         {% endif %}
@@ -179,30 +179,30 @@
 {# "+ Add manually" for books no database lists yet. With fixed=true the target series is implied. #}
 {% macro manual_form(all_series, target_series=none, title='', author='', fixed=false, open=false) -%}
   <details class="inline-form manual-add"{% if open %} open{% endif %}>
-    <summary class="btn-small">+ Add manually</summary>
+    <summary class="btn-small">{{ _("+ Add manually") }}</summary>
     <form action="/books/add-manual" method="post" class="manual-form">
-      <input type="text" name="title" value="{{ title }}" placeholder="Title" required aria-label="Title">
-      <input type="text" name="author" value="{{ author or '' }}" placeholder="Author" aria-label="Author">
-      <input type="text" name="position" placeholder="Series #" class="narrow" aria-label="Number in series">
-      <input type="number" name="year" placeholder="Year" class="narrow" aria-label="Year">
+      <input type="text" name="title" value="{{ title }}" placeholder="{{ _('Title') }}" required aria-label="{{ _('Title') }}">
+      <input type="text" name="author" value="{{ author or '' }}" placeholder="{{ _('Author') }}" aria-label="{{ _('Author') }}">
+      <input type="text" name="position" placeholder="{{ _('Series #') }}" class="narrow" aria-label="{{ _('Number in series') }}">
+      <input type="number" name="year" placeholder="{{ _('Year') }}" class="narrow" aria-label="{{ _('Year') }}">
       {% if fixed and target_series %}
         <input type="hidden" name="series_id" value="{{ target_series['id'] }}">
       {% else %}
-        <select name="series_id" class="series-pick" aria-label="Series">
-          <option value="">Standalone</option>
+        <select name="series_id" class="series-pick" aria-label="{{ _('Series') }}">
+          <option value="">{{ _("Standalone") }}</option>
           {% for s in all_series %}
-            <option value="{{ s['id'] }}"{% if target_series and target_series['id'] == s['id'] %} selected{% endif %}>{{ s['name'] }}</option>
+            <option value="{{ s['id'] }}"{% if target_series and target_series['id'] == s['id'] %} selected{% endif %}>{{ sn(s) }}</option>
           {% endfor %}
-          <option value="new">+ New series&hellip;</option>
+          <option value="new">{{ _("+ New series…") }}</option>
         </select>
-        <input type="text" name="new_series" class="new-series" placeholder="Series name" hidden>
+        <input type="text" name="new_series" class="new-series" placeholder="{{ _('Series name') }}" hidden>
       {% endif %}
-      <select name="status" aria-label="Status">
-        {% for key, label in STATUSES.items() %}<option value="{{ key }}">{{ label }}</option>{% endfor %}
+      <select name="status" aria-label="{{ _('Status') }}">
+        {% for key, label in STATUSES.items() %}<option value="{{ key }}">{{ _(label) }}</option>{% endfor %}
       </select>
-      <button type="submit" class="btn-small btn-accent">Add</button>
+      <button type="submit" class="btn-small btn-accent">{{ _("Add") }}</button>
     </form>
-    <p class="meta">For books Hardcover and Open Library don't list yet. It links itself to them (cover, year, series #) once they do.</p>
+    <p class="meta">{{ _("For books Hardcover and Open Library don't list yet. It links itself to them (cover, year, series #) once they do.") }}</p>
   </details>
 {%- endmacro %}
 

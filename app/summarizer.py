@@ -11,9 +11,17 @@ class SummarizeError(Exception):
     pass
 
 
+def _language_note() -> str:
+    """Summaries follow the interface language of whoever saved the link."""
+    from i18n import get_lang
+    if get_lang() == "fr":
+        return "\n\nWrite the summary, the key points and the tags in French, whatever the article's language."
+    return ""
+
+
 async def summarize(title: str, text: str) -> dict:
     body_text = text[: settings.max_article_chars]
-    prompt = f"{_SYSTEM_PROMPT}\n\nTitle: {title}\n\nArticle:\n{body_text}"
+    prompt = f"{_SYSTEM_PROMPT}{_language_note()}\n\nTitle: {title}\n\nArticle:\n{body_text}"
 
     try:
         parsed = parse_json(await complete(prompt, settings.model_summarizer))

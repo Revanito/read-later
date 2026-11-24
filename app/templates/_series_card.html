@@ -4,8 +4,8 @@
 <article class="card series-card{% if entry.total and entry.done >= entry.total %} series-done{% endif %}">
   <div class="series-head">
     <div>
-      <h3><a href="/books/series/{{ s['id'] }}">{{ s['name'] }}</a></h3>
-      <div class="meta">{{ s['author'] or 'Unknown author' }}</div>
+      <h3><a href="/books/series/{{ s['id'] }}">{{ sn(s) }}</a></h3>
+      <div class="meta">{{ s['author'] or _("Unknown author") }}</div>
     </div>
     <div class="progress-count">{{ entry.done }}<span>/{{ entry.total }}</span></div>
   </div>
@@ -14,34 +14,35 @@
   {% if entry.next_up %}
     {% set b = entry.next_up %}
     <div class="next-up">
-      <a href="/books/book/{{ b['id'] }}">{{ ui.cover(b['cover_url'], b['title'], 'sm') }}</a>
+      <a href="/books/book/{{ b['id'] }}">{{ ui.cover(b['cover_url'], bt(b), 'sm') }}</a>
       <div class="next-up-body">
-        <div class="eyebrow">{{ 'Reading now' if b['status'] == 'reading' else 'Next up' }}</div>
-        <a class="next-title" href="/books/book/{{ b['id'] }}">{{ b['title'] }}</a>
+        <div class="eyebrow">{{ _("Reading now") if b['status'] == 'reading' else _("Next up") }}</div>
+        <a class="next-title" href="/books/book/{{ b['id'] }}">{{ bt(b) }}</a>
         {% if b['position_label'] %}<span class="meta">#{{ b['position_label'] }}</span>{% endif %}
       </div>
       <form action="/books/book/{{ b['id'] }}/status" method="post">
         <input type="hidden" name="next" value="/books">
         {% if b['status'] == 'reading' %}
           <input type="hidden" name="status" value="read">
-          <button type="submit" class="btn-small btn-accent">Finished</button>
+          <button type="submit" class="btn-small btn-accent">{{ _("Finished") }}</button>
         {% else %}
           <input type="hidden" name="status" value="reading">
-          <button type="submit" class="btn-small">Start</button>
+          <button type="submit" class="btn-small">{{ _("Start") }}</button>
         {% endif %}
       </form>
     </div>
   {% elif entry.books %}
-    <div class="meta done-line">&check; All read{% set last = entry.books | selectattr('finished_at') | map(attribute='finished_at') | sort | last %}{% if last %}, finished {{ last[:10] }}{% endif %}.</div>
+    {% set last = entry.books | selectattr('finished_at') | map(attribute='finished_at') | sort | last %}
+    <div class="meta done-line">&check; {{ _("All read, finished {date}.", date=last[:10]) if last else _("All read.") }}</div>
   {% else %}
-    <div class="meta done-line">No books yet. <a href="/books/search?series_id={{ s['id'] }}">Add some</a>.</div>
+    <div class="meta done-line">{{ _("No books yet.") }} <a href="/books/search?series_id={{ s['id'] }}">{{ _("Add some") }}</a>.</div>
   {% endif %}
 
   {% if entry.books %}
-    <ol class="cover-strip" aria-label="Read order">
+    <ol class="cover-strip" aria-label="{{ _('Read order') }}">
       {% for b in entry.books %}
-        <li class="st-{{ b['status'] }}" title="{{ loop.index }}. {{ b['title'] }} ({{ STATUSES[b['status']] }})">
-          <a href="/books/book/{{ b['id'] }}">{{ ui.cover(b['cover_url'], b['title'], 'xs') }}</a>
+        <li class="st-{{ b['status'] }}" title="{{ loop.index }}. {{ bt(b) }} ({{ _(STATUSES[b['status']]) }})">
+          <a href="/books/book/{{ b['id'] }}">{{ ui.cover(b['cover_url'], bt(b), 'xs') }}</a>
         </li>
       {% endfor %}
     </ol>

@@ -1,25 +1,25 @@
 {% extends "base.html" %}
-{% block title %}Link {{ s['name'] }} - read-later{% endblock %}
+{% block title %}{{ _("Link {series}", series=sn(s)) }} - read-later{% endblock %}
 {% block content %}
-  <a class="back" href="/books/series/{{ s['id'] }}">&larr; {{ s['name'] }}</a>
-  <h2 class="page-title">Link to a Hardcover series</h2>
-  <p class="meta">Pick the matching series. Its books get merged in: ones you already have are matched by title, missing ones go to the end of your read order.</p>
+  <a class="back" href="/books/series/{{ s['id'] }}">&larr; {{ sn(s) }}</a>
+  <h2 class="page-title">{{ _("Link to a Hardcover series") }}</h2>
+  <p class="meta">{{ _("Pick the matching series. Its books get merged in: ones you already have are matched by title, missing ones go to the end of your read order.") }}</p>
 
   <form action="/books/series/{{ s['id'] }}/link" method="get" class="book-search">
     <input type="search" name="q" value="{{ q }}" required>
-    <button type="submit">Search</button>
+    <button type="submit">{{ _("Search") }}</button>
   </form>
   {% for e in errors %}<div class="notice notice-error">{{ e }}</div>{% endfor %}
-  {% if not hits and not errors %}<p class="empty">No Hardcover series matched “{{ q }}”.</p>{% endif %}
+  {% if not hits and not errors %}<p class="empty">{{ _("No Hardcover series matched “{q}”.", q=q) }}</p>{% endif %}
 
   {% for h in hits %}
     <div class="card">
       <h3>{{ h.name }}</h3>
-      <div class="meta">{{ h.author or 'Unknown author' }} &middot; {{ h.books_count }} book{{ 's' if h.books_count != 1 }}</div>
+      <div class="meta">{{ h.author or _("Unknown author") }} &middot; {{ ngettext("{n} book", "{n} books", h.books_count) }}</div>
       {% if h.sample_titles %}<div class="meta sample">{{ h.sample_titles | join(' · ') }}</div>{% endif %}
       <form action="/books/series/{{ s['id'] }}/link" method="post" class="actions">
         <input type="hidden" name="hc_id" value="{{ h.hc_id }}">
-        <button type="submit">Link &amp; import</button>
+        <button type="submit">{{ _("Link & import") }}</button>
       </form>
     </div>
   {% endfor %}

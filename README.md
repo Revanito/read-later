@@ -85,6 +85,26 @@ cover, year and series # without overwriting what you typed:
 - **Sync from Hardcover** on the series page matches by title too;
 - the book page has **Look it up now** while it's still unlinked.
 
+### English / French
+
+The flags in the header switch the whole interface between English and French (remembered for a year in
+the `rl_lang` cookie; with no choice made, a French browser gets French). Every page, message, button and
+the reading-map labels are translated (`app/fr_texts.py`, English text as the key, so anything missing just
+shows in English).
+
+**Book titles follow too.** Each book can have a French title:
+
+- filled in automatically from Hardcover's most popular French edition (subtitles glued onto French titles,
+  like "Némésis: la guerre des ombres", are trimmed) during the background check, or right away with
+  **Find French titles** on a series page;
+- typed or corrected on the book page ("French title"); a title you type is never overwritten;
+- books that were never translated keep their original title, and the book page shows the original under a
+  French one.
+
+Series, section and arc names can have French names too (the Heresy and Discworld presets ship them: *Les
+Annales du Disque-monde*, *Acte 1 · Par où commencer*…). New article summaries and AI suggestions are
+written in the language you're using.
+
 ### Reading maps
 
 A series can have a **reading map**: its books grouped into sections and arcs joined by lines, like the

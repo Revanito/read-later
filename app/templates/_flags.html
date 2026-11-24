@@ -1,0 +1,6 @@
+{# Language flags (same images as Nexus). Plain links: /lang/<code> sets the rl_lang cookie and comes back here. #}
+{% set back = request.url.path ~ ('?' ~ request.url.query if request.url.query else '') %}
+<div class="flags" role="group" aria-label="{{ _('Language') }}">
+  <a href="/lang/fr?next={{ back | urlencode }}" lang="fr" title="Français" aria-current="{{ 'true' if lang() == 'fr' else 'false' }}"><img src="/static/flags/france.jpg" alt="Français"></a>
+  <a href="/lang/en?next={{ back | urlencode }}" lang="en" title="English" aria-current="{{ 'true' if lang() == 'en' else 'false' }}"><img src="/static/flags/united-kingdom.jpg" alt="English"></a>
+</div>

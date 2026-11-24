@@ -32,7 +32,10 @@ def _seed_text(seed_type: str, seed_id: int) -> str:
 
 async def recommend(seed_type: str, seed_id: int) -> list[dict]:
     library = "\n".join(f"- {line}" for line in books_db.library_overview()) or "- (empty)"
-    prompt = f"{_PROMPT}\n\nSeed:\n{_seed_text(seed_type, seed_id)}\n\nAlready in the library:\n{library}"
+    from i18n import get_lang
+    lang_note = ('\n\nWrite each "why" in French. Keep titles as they were published (use the French edition '
+                 "title when one exists).") if get_lang() == "fr" else ""
+    prompt = f"{_PROMPT}{lang_note}\n\nSeed:\n{_seed_text(seed_type, seed_id)}\n\nAlready in the library:\n{library}"
     try:
         parsed = parse_json(await complete(prompt, settings.model_recommender))
     except LLMError as exc:

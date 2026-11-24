@@ -9,6 +9,11 @@
   const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
   const NEXT = { want: "reading", reading: "read", read: "want", skip: "want" };
   const LABEL = M.statuses;
+  // Interface text in the page's language (base.html puts it in window.RL_TEXT; English is the key).
+  const TEXT = window.RL_TEXT || {};
+  const T = (s) => TEXT[s] || s;
+  const FR = window.RL_LANG === "fr";
+  const TP = (one, other, n) => T(FR ? (n <= 1 ? one : other) : (n === 1 ? one : other)).replace("{n}", n);
   const PRED_KINDS = new Set(["seq", "rowseq", "elbow", "vdash", "branch", "logic"]);
   const DONE = new Set(["read", "skip"]);
   let view = "map";
@@ -54,17 +59,18 @@
   // --- map view -------------------------------------------------------------------------------------
   function nodeHtml(id, color) {
     const n = node(id);
-    const badge = n.status === "reading" ? '<span class="badge reading">Reading</span>' : upNext(id) ? '<span class="badge">Up next</span>' : "";
-    const tip = [n.title, n.sub, LABEL[n.status], n.lines.length ? "Lines: " + n.lines.filter((c) => M.lines[c]).map((c) => M.lines[c][0]).join(", ") : "",
-      n.stories.length ? "Stories: " + n.stories.join(", ") : ""].filter(Boolean).join("\n");
+    const badge = n.status === "reading" ? `<span class="badge reading">${esc(T("Reading"))}</span>` : upNext(id) ? `<span class="badge">${esc(T("Up next"))}</span>` : "";
+    const tip = [n.title, n.title_orig && n.title_orig !== n.title ? T("Original title: {title}").replace("{title}", n.title_orig) : "",
+      n.sub, LABEL[n.status], n.lines.length ? T("Lines:") + " " + n.lines.filter((c) => M.lines[c]).map((c) => M.lines[c][0]).join(", ") : "",
+      n.stories.length ? T("Stories:") + " " + n.stories.join(", ") : ""].filter(Boolean).join("\n");
     return `<li><button type="button" class="node st-${n.status}" data-id="${id}" style="--arc:${color}" title="${esc(tip)}">${badge}` +
       `<span class="t">${esc(n.title)}</span><span class="s"><span>${esc(n.sub)}</span>${dots(n.lines)}` +
-      `<a class="open" href="/books/book/${id}" title="Open book page" aria-label="Open ${esc(n.title)}">&#8599;</a></span></button></li>`;
+      `<a class="open" href="/books/book/${id}" title="${esc(T("Open book page"))}" aria-label="${esc(T("Open {title}").replace("{title}", n.title))}">&#8599;</a></span></button></li>`;
   }
 
   function headHtml(name, hint, ids) {
     const done = ids.filter((i) => node(i).status === "read").length;
-    return `<div class="arc-head"><h3>${esc(name)}</h3><div class="sub"><span>${ids.length} title${ids.length === 1 ? "" : "s"}</span><span>${done}/${ids.length}</span></div></div>` +
+    return `<div class="arc-head"><h3>${esc(name)}</h3><div class="sub"><span>${esc(TP("{n} title", "{n} titles", ids.length))}</span><span>${done}/${ids.length}</span></div></div>` +
       (hint ? `<div class="loose-hint">${esc(hint)}</div>` : "");
   }
 
@@ -72,7 +78,7 @@
     const ids = g.rows.flatMap((r) => r.ids);
     const loose = g.loose || s.kind === "loose";
     const cls = ["arc", layout === "row" ? "row" : "", layout === "solo" ? "solo" : "", loose ? "loose" : ""].join(" ");
-    const hint = g.hint || (loose && !s.hint ? "Any order, any time" : layout === "col" ? "" : s.hint);
+    const hint = g.hint || (loose && !s.hint ? T("Any order, any time") : layout === "col" ? "" : s.hint);
     if (layout === "chains") {
       const rows = g.rows.map((r) => `<ol>${'<li class="slot"></li>'.repeat(r.indent)}${r.ids.map((i) => nodeHtml(i, g.color)).join("")}</ol>`).join("");
       return `<section class="arc chains" style="--arc:${g.color}">${headHtml(s.name, s.hint, ids)}<div class="chain-rows">${rows}</div></section>`;
@@ -170,11 +176,11 @@
       if (!ids.length) return;
       if (s.kind === "cols" && ids.some((i) => node(i).o != null)) {
         const sorted = [...ids].sort((a, b) => (node(a).o ?? 1e9) - (node(b).o ?? 1e9));
-        blocks.push({ name: s.name + " · reading order", ids: sorted, color: s.color, numbered: true, big: true });
+        blocks.push({ name: s.name + " · " + T("reading order"), ids: sorted, color: s.color, numbered: true, big: true });
       } else if (s.kind === "cols") {
         s.groups.forEach((g) => {
           const gids = g.rows.flatMap((r) => r.ids);
-          if (gids.length) blocks.push({ name: g.name, ids: gids, color: g.color, hint: g.loose ? (g.hint || "Any order, any time") : "" });
+          if (gids.length) blocks.push({ name: g.name, ids: gids, color: g.color, hint: g.loose ? (g.hint || T("Any order, any time")) : "" });
         });
       } else {
         blocks.push({ name: s.name, ids, color: s.groups[0].color, hint: s.kind === "loose" ? s.hint : "" });
@@ -190,7 +196,7 @@
       const items = blk.ids.map((id, k) => {
         const n = node(id);
         const next = upNext(id);
-        const st = n.status === "reading" ? "Reading" : next ? "Up next" : LABEL[n.status];
+        const st = n.status === "reading" ? T("Reading") : next ? T("Up next") : LABEL[n.status];
         const label = blk.numbered ? `${k + 1}.` : n.sub;
         const small = [blk.numbered ? n.sub : "", n.stories.join(", ")].filter(Boolean).join(" · ");
         return `<li><button type="button" class="li-btn st-${n.status}${next ? " next" : ""}" data-id="${id}"><span class="n">${esc(label)}</span>` +
@@ -207,7 +213,7 @@
     if (legend) {
       const usedCodes = new Set(Object.values(M.nodes).flatMap((n) => n.lines));
       const codes = Object.keys(M.lines).filter((c) => usedCodes.has(c));
-      legend.innerHTML = codes.length ? '<span class="lab">Lines:</span>' + codes.map((c) => `<span>${dots([c])}${esc(M.lines[c][0])}</span>`).join("") : "";
+      legend.innerHTML = codes.length ? `<span class="lab">${esc(T("Lines:"))}</span>` + codes.map((c) => `<span>${dots([c])}${esc(M.lines[c][0])}</span>`).join("") : "";
     }
     const all = Object.values(M.nodes).filter((n) => n.status !== "skip");
     const done = all.filter((n) => n.status === "read").length;
@@ -246,7 +252,7 @@
     } catch {
       n.status = before;
       renderAll();
-      if (notice) { notice.textContent = "Couldn't save that change. Check the connection and try again."; notice.hidden = false; }
+      if (notice) { notice.textContent = T("Couldn't save that change. Check the connection and try again."); notice.hidden = false; }
     }
   }
   map.addEventListener("click", cycle);

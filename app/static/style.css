@@ -260,6 +260,17 @@ header h1 { margin-right: auto; }
 
 .logout { margin: 0; }
 
+/* Language flags (same look as Nexus): the active language gets an accent ring. */
+.flags { display: flex; gap: 8px; align-items: center; }
+.flags a { line-height: 0; border-radius: 4px; }
+.flags img { width: 28px; height: 18px; border-radius: 3px; object-fit: cover; display: block; }
+.flags a[aria-current="true"] { box-shadow: 0 0 0 2px var(--accent); }
+.flags a[aria-current="false"] img { opacity: 0.75; }
+.flags a:hover img, .flags a:focus-visible img { opacity: 1; }
+.flags a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.login-flags { display: flex; justify-content: flex-end; margin-bottom: 0.75rem; }
+.original-title { font-style: italic; }
+
 .logout button {
   background: transparent;
   border: none;

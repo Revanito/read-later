@@ -7,7 +7,6 @@ trigger extra checks. Results feed the notification panel; nothing is sent anywh
 """
 import asyncio
 import logging
-import re
 from datetime import date, datetime, timedelta, timezone
 
 import books_db
@@ -61,6 +60,10 @@ async def run_check() -> dict:
                 books = []
             result["found"] = _store(books, follows, series)
         result["linked"] = await link_manual_books()
+        try:
+            await fill_french_titles()
+        except Exception:  # French titles are a nice-to-have; never let them break the release check
+            log.exception("French title lookup crashed")
 
         books_db.meta_set("watch_last_check_at", datetime.now(timezone.utc).isoformat())
         books_db.meta_set("watch_last_error", result["error"])
@@ -79,14 +82,15 @@ def _store(books: list[dict], follows, series) -> int:
     today = _today()
     found = 0
     for b in books:
-        if b["hc_id"] not in hc_ids and books_db._norm_title(b["title"]) in titles:
+        if b["hc_id"] not in hc_ids and books_db.owns_title(titles, b["title"], b["author"]):
             # A book you added by hand just showed up on Hardcover: link it instead of alerting.
-            manual = books_db.find_unlinked_by_title(b["title"])
-            if manual and _same_author(manual["author"], b["author"]):
+            manual = books_db.find_unlinked_by_title(b["title"], b["author"])
+            if manual:
                 books_db.link_book(manual["id"], {**b, "hc_slug": b["slug"]}, "hc", _series_position(manual, b))
                 hc_ids.add(b["hc_id"])
                 log.info("linked manual book %r to Hardcover %s", manual["title"], b["hc_id"])
-        owned = b["hc_id"] in hc_ids or books_db._norm_title(b["title"]) in titles
+        # Same title by another author (two different "Sanctuary"s) doesn't count as owning it.
+        owned = b["hc_id"] in hc_ids or books_db.owns_title(titles, b["title"], b["author"])
         # Something you already have only matters if it hasn't come out yet (release-day heads-up).
         if owned and b["release_date"] < today:
             continue
@@ -108,19 +112,9 @@ _LOOKUPS_PER_CHECK = 8
 _LOOKUP_RETRY_HOURS = 20
 
 
-def _surnames(authors: str | None) -> set[str]:
-    out = set()
-    for name in (authors or "").split(","):
-        parts = re.sub(r"[^a-z ]+", " ", name.lower()).split()
-        if parts:
-            out.add(parts[-1])
-    return out
-
-
-def _same_author(mine: str | None, theirs: str | None) -> bool:
-    """Surname overlap: 'DJ Molles' matches 'D.J. Molles'. A manual book with no author never
-    auto-links, since a bare title is too ambiguous."""
-    return bool(_surnames(mine) & _surnames(theirs))
+# Surname overlap ('DJ Molles' matches 'D.J. Molles'); a manual book with no author never auto-links,
+# since a bare title is too ambiguous.
+_same_author = books_db.same_author
 
 
 def _series_position(book, hit: dict) -> str:
@@ -146,7 +140,7 @@ async def lookup_one(book) -> str | None:
             log.warning("lookup of %r on Hardcover failed: %s", book["title"], exc)
             hits = []
         for h in hits:
-            if (books_db._norm_title(h["title"]) == books_db._norm_title(book["title"])
+            if (books_db.titles_match(h["title"], book["title"])
                     and _same_author(book["author"], h["author"]) and not books_db.find_book(h["hc_id"])):
                 books_db.link_book(book["id"], h, "hc", _series_position(book, h))
                 books_db.mark_lookup_tried(book["id"])
@@ -158,7 +152,7 @@ async def lookup_one(book) -> str | None:
             log.warning("lookup of %r on Open Library failed: %s", book["title"], exc)
             hits = []
         for h in hits:
-            if (books_db._norm_title(h["title"]) == books_db._norm_title(book["title"])
+            if (books_db.titles_match(h["title"], book["title"])
                     and _same_author(book["author"], h["author"]) and not books_db.find_book(None, h["ol_key"])):
                 books_db.link_book(book["id"], h, "ol")
                 books_db.mark_lookup_tried(book["id"])
@@ -176,6 +170,31 @@ async def link_manual_books() -> int:
         if await lookup_one(book):
             linked += 1
     return linked
+
+
+# --- French titles ---------------------------------------------------------------------------------
+
+_FR_PER_CHECK = 200
+
+
+async def fill_french_titles(series_id: int | None = None) -> tuple[int, int]:
+    """Look up French edition titles for Hardcover-linked books (one request per 100 books).
+    With series_id, re-checks every book of that series now; otherwise the ones never/long ago checked.
+    Returns (books checked, titles found or changed)."""
+    if not hardcover.enabled():
+        return 0, 0
+    books = books_db.books_needing_fr(_FR_PER_CHECK if series_id is None else 1000, series_id=series_id)
+    if not books:
+        return 0, 0
+    try:
+        by_hc = await hardcover.french_titles([b["hc_id"] for b in books])
+    except hardcover.HardcoverError as exc:
+        log.warning("French title lookup failed: %s", exc)
+        return 0, 0
+    found = {b["id"]: by_hc[b["hc_id"]] for b in books if b["hc_id"] in by_hc}
+    changed = books_db.store_fr_titles(found, [b["id"] for b in books])
+    log.info("French titles: checked %d, %d new/changed", len(books), changed)
+    return len(books), changed
 
 
 async def loop() -> None:

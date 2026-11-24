@@ -1,16 +1,16 @@
 {% extends "base.html" %}
 {% block title %}{{ a['title'] or a['url'] }} - read-later{% endblock %}
 {% block content %}
-  <a class="back" href="{{ '/?archived=true' if a['archived'] else '/' }}">&larr; {{ 'Archived' if a['archived'] else 'Saved articles' }}</a>
+  <a class="back" href="{{ '/?archived=true' if a['archived'] else '/' }}">&larr; {{ _("Archived") if a['archived'] else _("Saved articles") }}</a>
   <div class="card">
     <h2><a href="{{ a['url'] }}" target="_blank" rel="noopener">{{ a['title'] or a['url'] }}</a></h2>
     <div class="meta">
       {{ a['domain'] }} &middot; {{ a['added_at'][:10] }}
-      {% if a['status'] == 'failed' %}<span class="badge-failed">failed</span>{% endif %}
+      {% if a['status'] == 'failed' %}<span class="badge-failed">{{ _("failed") }}</span>{% endif %}
     </div>
 
     {% if a['status'] == 'failed' %}
-      <p class="summary">Could not summarize this link: {{ a['error'] }}</p>
+      <p class="summary">{{ _("Could not summarize this link: {error}", error=a['error']) }}</p>
     {% else %}
       {% if a['summary'] %}<p class="summary">{{ a['summary'] }}</p>{% endif %}
       {% if a['key_points'] %}
@@ -27,24 +27,24 @@
 
     <div class="actions">
       {% if a['status'] == 'failed' %}
-        <form action="/articles/{{ a['id'] }}/retry" method="post"><button type="submit">Retry</button></form>
+        <form action="/articles/{{ a['id'] }}/retry" method="post"><button type="submit">{{ _("Retry") }}</button></form>
       {% endif %}
       {% if not a['read_at'] %}
-        <form action="/articles/{{ a['id'] }}/read" method="post"><button type="submit">Mark read</button></form>
+        <form action="/articles/{{ a['id'] }}/read" method="post"><button type="submit">{{ _("Mark read") }}</button></form>
       {% endif %}
       {% if a['archived'] %}
-        <form action="/articles/{{ a['id'] }}/unarchive" method="post"><button type="submit">Unarchive</button></form>
+        <form action="/articles/{{ a['id'] }}/unarchive" method="post"><button type="submit">{{ _("Unarchive") }}</button></form>
       {% else %}
-        <form action="/articles/{{ a['id'] }}/archive" method="post"><button type="submit">Archive</button></form>
+        <form action="/articles/{{ a['id'] }}/archive" method="post"><button type="submit">{{ _("Archive") }}</button></form>
       {% endif %}
-      <form action="/articles/{{ a['id'] }}/delete" method="post" onsubmit="return confirm('Delete this article?');">
-        <button type="submit">Delete</button>
+      <form action="/articles/{{ a['id'] }}/delete" method="post" onsubmit='return confirm({{ _("Delete this article?") | tojson }});'>
+        <button type="submit">{{ _("Delete") }}</button>
       </form>
     </div>
 
     {% if a['full_text'] %}
       <details style="margin-top: 1.25rem;">
-        <summary class="nav-link" style="cursor: pointer;">Full extracted text</summary>
+        <summary class="nav-link" style="cursor: pointer;">{{ _("Full extracted text") }}</summary>
         <div class="full-text">{{ a['full_text'] }}</div>
       </details>
     {% endif %}

@@ -1,17 +1,17 @@
 {% extends "base.html" %}
 {% import "_books.html" as ui %}
-{% block title %}{{ s['name'] }} - read-later{% endblock %}
+{% block title %}{{ sn(s) }} - read-later{% endblock %}
 {% block main_class %}{{ 'wide' if map else '' }}{% endblock %}
 {% block content %}
-  <a class="back" href="/books">&larr; Books</a>
+  <a class="back" href="/books">&larr; {{ _("Books") }}</a>
   <section class="card">
     <div class="series-head">
       <div>
-        <h2 class="page-title">{{ s['name'] }}</h2>
+        <h2 class="page-title">{{ sn(s) }}</h2>
         <div class="meta">
-          {{ s['author'] or 'Unknown author' }}
+          {{ s['author'] or _("Unknown author") }}
           {% if s['hc_slug'] %} &middot; <a href="https://hardcover.app/series/{{ s['hc_slug'] }}" target="_blank" rel="noopener">Hardcover</a>{% endif %}
-          {% if s['hc_id'] %} &middot; new entries watched{% endif %}
+          {% if s['hc_id'] %} &middot; {{ _("new entries watched") }}{% endif %}
         </div>
         {{ ui.follow_buttons(s['author'], '/books/series/' ~ s['id']) }}
       </div>
@@ -21,23 +21,26 @@
     {% if s['notes'] %}<p class="summary">{{ s['notes'] }}</p>{% endif %}
 
     <div class="actions">
-      <a class="button" href="/books/search?series_id={{ s['id'] }}">+ Add book</a>
+      <a class="button" href="/books/search?series_id={{ s['id'] }}">{{ _("+ Add book") }}</a>
       {% if hardcover_enabled %}
         <form action="/books/series/{{ s['id'] }}/sync" method="post">
-          <button type="submit">{{ 'Sync from Hardcover' if s['hc_id'] else 'Link to Hardcover' }}</button>
+          <button type="submit">{{ _("Sync from Hardcover") if s['hc_id'] else _("Link to Hardcover") }}</button>
+        </form>
+        <form action="/books/series/{{ s['id'] }}/french-titles" method="post" onsubmit="this.querySelector('button').disabled = true;">
+          <button type="submit" title="{{ _('Look up French editions on Hardcover for the books in this series') }}">{{ _("Find French titles") }}</button>
         </form>
       {% endif %}
       <form action="/books/series/{{ s['id'] }}/reset-order" method="post"
-            onsubmit="return confirm('Re-sort by series number (#1, #2...)? Your custom order will be replaced.');">
-        <button type="submit">Reset to series order</button>
+            onsubmit='return confirm({{ _("Re-sort by series number (#1, #2...)? Your custom order will be replaced.") | tojson }});'>
+        <button type="submit">{{ _("Reset to series order") }}</button>
       </form>
       {% if map %}
-        <a class="button" href="/books/series/{{ s['id'] }}/map/edit">Edit reading map</a>
+        <a class="button" href="/books/series/{{ s['id'] }}/map/edit">{{ _("Edit reading map") }}</a>
       {% else %}
         <form action="/books/series/{{ s['id'] }}/map/start" method="post">
-          <button type="submit" title="Group this series into arcs and sections, with lines between them">+ Build a reading map</button>
+          <button type="submit" title="{{ _('Group this series into arcs and sections, with lines between them') }}">{{ _("+ Build a reading map") }}</button>
         </form>
-        <a class="button" href="/books/presets?series_id={{ s['id'] }}">Apply a preset</a>
+        <a class="button" href="/books/presets?series_id={{ s['id'] }}">{{ _("Apply a preset") }}</a>
       {% endif %}
     </div>
     {{ ui.manual_form([], s, author=s['author'], fixed=true) }}
@@ -45,16 +48,16 @@
 
   {% if map %}
     <div class="map-toolbar">
-      <div class="viewtog" role="group" aria-label="View">
-        <button type="button" data-view="map">Map</button>
-        <button type="button" data-view="list">List</button>
-        <button type="button" data-view="order">Order</button>
+      <div class="viewtog" role="group" aria-label="{{ _('View') }}">
+        <button type="button" data-view="map">{{ _("Map") }}</button>
+        <button type="button" data-view="list">{{ _("List") }}</button>
+        <button type="button" data-view="order">{{ _("Order") }}</button>
       </div>
       <div class="legend">
-        <span><i></i>reading path</span>
-        <span><i class="dash"></i>side story / crossover</span>
-        <span><b></b>reading</span>
-        <span>faded = read · click a book to tick it · &#8599; opens it</span>
+        <span><i></i>{{ _("reading path") }}</span>
+        <span><i class="dash"></i>{{ _("side story / crossover") }}</span>
+        <span><b></b>{{ _("reading") }}</span>
+        <span>{{ _("faded = read · click a book to tick it · ↗ opens it") }}</span>
       </div>
     </div>
     <div class="notice notice-error" id="map-notice" hidden></div>
@@ -65,18 +68,18 @@
   {% endif %}
 
   <div id="order-view"{% if map %} hidden{% endif %}>
-  <h3 class="section-title">Read order <span class="meta">drag to rearrange, or use the arrows</span></h3>
+  <h3 class="section-title">{{ _("Read order") }} <span class="meta">{{ _("drag to rearrange, or use the arrows") }}</span></h3>
   {% if not books %}
-    <p class="empty">No books yet. <a href="/books/search?series_id={{ s['id'] }}">Search for one</a>.</p>
+    <p class="empty">{{ _("No books yet.") }} <a href="/books/search?series_id={{ s['id'] }}">{{ _("Search for one") }}</a>.</p>
   {% endif %}
   <ol class="read-order" data-series="{{ s['id'] }}">
     {% for b in books %}
       <li class="order-row st-{{ b['status'] }}" id="b{{ b['id'] }}" data-id="{{ b['id'] }}" draggable="true">
         <span class="handle" aria-hidden="true">&#x2807;</span>
         <span class="order-num">{{ loop.index }}</span>
-        <a href="/books/book/{{ b['id'] }}">{{ ui.cover(b['cover_url'], b['title'], 'sm') }}</a>
+        <a href="/books/book/{{ b['id'] }}">{{ ui.cover(b['cover_url'], bt(b), 'sm') }}</a>
         <div class="order-body">
-          <a class="next-title" href="/books/book/{{ b['id'] }}">{{ b['title'] }}</a>
+          <a class="next-title" href="/books/book/{{ b['id'] }}">{{ bt(b) }}</a>
           <div class="meta">
             {% if b['position_label'] %}#{{ b['position_label'] }}{% endif %}
             {% if b['year'] %}{% if b['position_label'] %} &middot; {% endif %}{{ b['year'] }}{% endif %}
@@ -85,17 +88,17 @@
         {{ ui.status_select(b, '/books/series/' ~ s['id'] ~ '#b' ~ b['id']) }}
         {# Count is computed at click time so it stays right after drag-reordering. #}
         <form action="/books/book/{{ b['id'] }}/read-above" method="post" class="read-above"
-              onsubmit="const n = [...this.closest('ol').children].indexOf(this.closest('li')); return confirm('Mark the ' + n + (n === 1 ? ' book' : ' books') + ' above this one as read? Skipped books stay skipped.');">
-          <button type="submit" title="Mark every book above this one as read">&check; Read all above</button>
+              onsubmit='const n = [...this.closest("ol").children].indexOf(this.closest("li")); return confirm((n === 1 ? {{ _("Mark the {n} book above this one as read? Skipped books stay skipped.") | tojson }} : {{ _("Mark the {n} books above this one as read? Skipped books stay skipped.") | tojson }}).replace("{n}", n));'>
+          <button type="submit" title="{{ _('Mark every book above this one as read') }}">&check; {{ _("Read all above") }}</button>
         </form>
         <div class="move-btns">
           <form action="/books/book/{{ b['id'] }}/move" method="post">
             <input type="hidden" name="direction" value="up">
-            <button type="submit" aria-label="Move up"{% if loop.first %} disabled{% endif %}>&uarr;</button>
+            <button type="submit" class="mv-up" aria-label="{{ _('Move up') }}"{% if loop.first %} disabled{% endif %}>&uarr;</button>
           </form>
           <form action="/books/book/{{ b['id'] }}/move" method="post">
             <input type="hidden" name="direction" value="down">
-            <button type="submit" aria-label="Move down"{% if loop.last %} disabled{% endif %}>&darr;</button>
+            <button type="submit" class="mv-down" aria-label="{{ _('Move down') }}"{% if loop.last %} disabled{% endif %}>&darr;</button>
           </form>
         </div>
       </li>
@@ -104,23 +107,24 @@
   </div>
 
   {% if subjects %}
-    <h3 class="section-title">Browse similar subjects</h3>
+    <h3 class="section-title">{{ _("Browse similar subjects") }}</h3>
     {{ ui.subject_chips(subjects) }}
   {% endif %}
 
   {{ ui.recs_block(recs, '/books/series/' ~ s['id'] ~ '/recommend') }}
 
   <details class="card danger-zone">
-    <summary>Edit series</summary>
+    <summary>{{ _("Edit series") }}</summary>
     <form action="/books/series/{{ s['id'] }}/edit" method="post" class="stack-form">
-      <label>Name <input type="text" name="name" value="{{ s['name'] }}" required></label>
-      <label>Author <input type="text" name="author" value="{{ s['author'] or '' }}"></label>
-      <label>Notes <textarea name="notes" rows="3" placeholder="e.g. read the novellas after book 3">{{ s['notes'] or '' }}</textarea></label>
-      <button type="submit" class="btn-small btn-accent">Save</button>
+      <label>{{ _("Name") }} <input type="text" name="name" value="{{ s['name'] }}" required></label>
+      <label>{{ _("French name") }} <input type="text" name="name_fr" value="{{ s['name_fr'] or '' }}" placeholder="{{ _('Shown when the interface is in French') }}"></label>
+      <label>{{ _("Author") }} <input type="text" name="author" value="{{ s['author'] or '' }}"></label>
+      <label>{{ _("Notes") }} <textarea name="notes" rows="3" placeholder="{{ _('e.g. read the novellas after book 3') }}">{{ s['notes'] or '' }}</textarea></label>
+      <button type="submit" class="btn-small btn-accent">{{ _("Save") }}</button>
     </form>
     <form action="/books/series/{{ s['id'] }}/delete" method="post"
-          onsubmit="return confirm('Delete this series and all {{ books | length }} of its books?');">
-      <button type="submit" class="btn-small btn-danger">Delete series and its books</button>
+          onsubmit='return confirm({{ ngettext("Delete this series and its {n} book?", "Delete this series and all {n} of its books?", books | length) | tojson }});'>
+      <button type="submit" class="btn-small btn-danger">{{ _("Delete series and its books") }}</button>
     </form>
   </details>
 {% endblock %}
@@ -158,8 +162,8 @@
       const rows = [...list.querySelectorAll('.order-row')];
       rows.forEach((row, i) => {
         row.querySelector('.order-num').textContent = i + 1;
-        row.querySelector('button[aria-label="Move up"]').disabled = i === 0;
-        row.querySelector('button[aria-label="Move down"]').disabled = i === rows.length - 1;
+        row.querySelector('.mv-up').disabled = i === 0;
+        row.querySelector('.mv-down').disabled = i === rows.length - 1;
       });
       const resp = await fetch(`/books/series/${list.dataset.series}/order`, {
         method: 'POST',

@@ -11,6 +11,7 @@ from fastapi.staticfiles import StaticFiles
 import auth
 import books_db
 import db
+import i18n
 import watcher
 from books_routes import router as books_router
 from extractor import ExtractionError, fetch_and_extract
@@ -37,6 +38,8 @@ app.include_router(books_router)
 
 @app.middleware("http")
 async def require_login(request: Request, call_next):
+    # Language first, so the login page and every notice come out in the right one.
+    i18n.set_lang(i18n.pick_lang(request.cookies.get(i18n.COOKIE), request.headers.get("accept-language")))
     if auth.is_public_path(request.url.path) or auth.is_valid_token(request.cookies.get(auth.COOKIE_NAME)):
         return await call_next(request)
     target = request.url.path + (f"?{request.url.query}" if request.url.query else "")
@@ -63,14 +66,14 @@ async def login(request: Request, password: str = Form(""), next: str = Form("/"
     if auth.is_locked_out(ip):
         log.warning("login refused for %s: too many failed attempts", ip)
         return templates.TemplateResponse(request, "login.html", {
-            "next": target, "error": "Too many failed attempts. Try again in a few minutes.",
+            "next": target, "error": i18n._("Too many failed attempts. Try again in a few minutes."),
         }, status_code=429)
     if not auth.check_password(password):
         auth.record_failure(ip)
         log.warning("failed login from %s", ip)
         await asyncio.sleep(1)  # slows down guessing without needing a real rate-limiter
         return templates.TemplateResponse(request, "login.html", {
-            "next": target, "error": "Wrong password.",
+            "next": target, "error": i18n._("Wrong password."),
         }, status_code=401)
 
     auth.clear_failures(ip)
@@ -79,6 +82,15 @@ async def login(request: Request, password: str = Form(""), next: str = Form("/"
         auth.COOKIE_NAME, auth.make_session_token(),
         max_age=auth.settings.session_days * 86400, httponly=True, samesite="lax", secure=auth.is_https(request),
     )
+    return resp
+
+
+@app.get("/lang/{code}")
+def switch_lang(code: str, next: str = "/"):
+    """The flags in the header: remember the language for a year and go back where we were."""
+    resp = RedirectResponse(auth.safe_next(next), status_code=303)
+    if code in i18n.LANGS:
+        resp.set_cookie(i18n.COOKIE, code, max_age=365 * 86400, samesite="lax", httponly=True)
     return resp
 
 

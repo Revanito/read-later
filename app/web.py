@@ -5,6 +5,7 @@ from fastapi.templating import Jinja2Templates
 
 import books_db
 import hardcover
+import i18n
 
 templates = Jinja2Templates(directory="templates")
 
@@ -20,4 +21,12 @@ templates.env.globals.update(
     new_releases=lambda: books_db.active_releases(date.today().isoformat()),
     followed_names=books_db.followed_name_map,
     norm_name=books_db.norm_name,
+    # English / French (see i18n.py): _("text"), ngettext(one, other, n), the current lang(), the strings
+    # the browser scripts need, and book/series names in the current language.
+    _=i18n._,
+    ngettext=i18n.ngettext,
+    lang=i18n.get_lang,
+    js_texts=i18n.js_texts,
+    bt=books_db.display_title,
+    sn=books_db.display_name,
 )

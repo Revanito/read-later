@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 
 import auth
 import books_db
+from i18n import _, ngettext
 import hardcover
 import openlibrary
 import presets
@@ -82,8 +83,8 @@ async def search(request: Request, q: str = "", type: str = "book", series_id: s
 
     if kind == "series":
         if not hardcover.enabled():
-            ctx["errors"].append("Series search needs Hardcover. Set HARDCOVER_TOKEN in .env, or search books "
-                                 "and build the series by hand.")
+            ctx["errors"].append(_("Series search needs Hardcover. Set HARDCOVER_TOKEN in .env, or search books "
+                                   "and build the series by hand."))
         else:
             try:
                 hits = await hardcover.search_series(q)
@@ -130,7 +131,7 @@ def add_book(
     hc = _int_or_none(hc_id)
     existing = books_db.find_book(hc, ol_key)
     if existing:
-        return _redirect(f"/books/book/{existing['id']}", "Already in your library.")
+        return _redirect(f"/books/book/{existing['id']}", _("Already in your library."))
 
     target = _int_or_none(series_id)
     if series_id == "new" and new_series.strip():
@@ -145,8 +146,8 @@ def add_book(
     }
     book_id = books_db.add_book(hit, target, position, status)
     if target:
-        return _redirect(f"/books/series/{target}", f"Added “{title}”.")
-    return _redirect(f"/books/book/{book_id}", "Added to your library.")
+        return _redirect(f"/books/series/{target}", _("Added “{title}”.", title=title))
+    return _redirect(f"/books/book/{book_id}", _("Added to your library."))
 
 
 @router.post("/add-manual")
@@ -158,16 +159,17 @@ def add_manual(
     lookup and links itself to Hardcover / Open Library once it shows up there."""
     title = title.strip()
     if not title:
-        return _redirect("/books", "A title is needed to add a book.")
-    existing = books_db.find_by_title(title)
-    if existing:
-        return _redirect(f"/books/book/{existing['id']}", "Already in your library.")
-
+        return _redirect("/books", _("A title is needed to add a book."))
     target = _int_or_none(series_id)
+    if target is not None and books_db.get_series(target) is None:
+        target = None
+    # Same title by another author is another book (Chris Fox's "Sanctuary" vs D.J. Molles's): only the same
+    # title by the same author, or already in this series, is a duplicate.
+    existing = books_db.find_duplicate(title, author.strip(), target)
+    if existing:
+        return _redirect(f"/books/book/{existing['id']}", _("Already in your library."))
     if series_id == "new" and new_series.strip():
         target = books_db.create_series(new_series, author)
-    elif target is not None and books_db.get_series(target) is None:
-        target = None
 
     book_id = books_db.add_book({"title": title, "author": author.strip(), "year": _int_or_none(year)},
                                 target, position.strip(), status)
@@ -175,25 +177,25 @@ def add_manual(
     if target:
         books_db.place_by_position(book_id)
         return _redirect(f"/books/series/{target}#b{book_id}",
-                         f"Added “{title}”. It links itself to Hardcover or Open Library once it's listed there.")
-    return _redirect(f"/books/book/{book_id}", "Added. It links itself to Hardcover or Open Library once it's listed there.")
+                         _("Added “{title}”. It links itself to Hardcover or Open Library once it's listed there.", title=title))
+    return _redirect(f"/books/book/{book_id}", _("Added. It links itself to Hardcover or Open Library once it's listed there."))
 
 
 @router.post("/import-series")
 async def import_series(hc_id: str = Form(...)):
     hc = _int_or_none(hc_id)
     if hc is None:
-        return _redirect("/books", "Invalid Hardcover series id.")
+        return _redirect("/books", _("Invalid Hardcover series id."))
     try:
         data = await hardcover.get_series(hc)
     except hardcover.HardcoverError as exc:
-        return _redirect("/books", f"Import failed: {exc}")
+        return _redirect("/books", _("Import failed: {error}", error=exc))
 
     local = books_db.find_series_by_hc(hc)
     series_id = local["id"] if local else books_db.create_series(data["name"], data["author"], hc, data["slug"])
     added = books_db.import_series_books(series_id, data["books"])
-    msg = f"Imported {added} book{'s' if added != 1 else ''} from Hardcover." if not local else \
-        f"Synced with Hardcover: {added} new book{'s' if added != 1 else ''}."
+    msg = (ngettext("Imported {n} book from Hardcover.", "Imported {n} books from Hardcover.", added) if not local
+           else ngettext("Synced with Hardcover: {n} new book.", "Synced with Hardcover: {n} new books.", added))
     return _redirect(f"/books/series/{series_id}", msg)
 
 
@@ -221,11 +223,12 @@ async def new_releases_page(request: Request, pick: str = "", notice: str = ""):
 async def check_now():
     result = await watcher.run_check()
     if result["error"]:
-        return _redirect("/books/new", f"Check failed: {result['error']}")
+        return _redirect("/books/new", _("Check failed: {error}", error=result["error"]))
     n, linked = result["found"], result.get("linked", 0)
-    msg = f"Checked. {n} new release{'s' if n != 1 else ''} found." if n else "Checked. Nothing new."
+    msg = (ngettext("Checked. {n} new release found.", "Checked. {n} new releases found.", n) if n
+           else _("Checked. Nothing new."))
     if linked:
-        msg += f" Linked {linked} manually added book{'s' if linked != 1 else ''}."
+        msg += " " + ngettext("Linked {n} manually added book.", "Linked {n} manually added books.", linked)
     return _redirect("/books/new", msg)
 
 
@@ -241,27 +244,27 @@ async def follow(name: str = Form(""), hc_id: str = Form(""), slug: str = Form("
     name = name.strip()
     if _int_or_none(hc_id):
         books_db.follow_author(int(hc_id), name or "Unknown author", slug)
-        return _redirect(target, f"Following {name}. You'll see their new books here.")
+        return _redirect(target, _("Following {name}. You'll see their new books here.", name=name))
     if not name:
         return _redirect(target)
     if not hardcover.enabled():
-        return _redirect(target, "Following authors needs Hardcover (HARDCOVER_TOKEN).")
+        return _redirect(target, _("Following authors needs Hardcover (HARDCOVER_TOKEN)."))
     try:
         hits = await hardcover.search_authors(name)
     except hardcover.HardcoverError as exc:
-        return _redirect(target, f"Couldn't look up {name}: {exc}")
+        return _redirect(target, _("Couldn't look up {name}: {error}", name=name, error=exc))
     exact = [h for h in hits if books_db.norm_name(h["name"]) == books_db.norm_name(name)]
     if len(exact) >= 1:
         # Several exact-name hits are usually duplicates; Typesense ranks the real one first.
         books_db.follow_author(exact[0]["hc_id"], exact[0]["name"], exact[0]["slug"])
-        return _redirect(target, f"Following {exact[0]['name']}. You'll see their new books here.")
-    return _redirect(f"/books/new?pick={quote(name)}", f"No exact match for “{name}”. Pick the right author below.")
+        return _redirect(target, _("Following {name}. You'll see their new books here.", name=exact[0]["name"]))
+    return _redirect(f"/books/new?pick={quote(name)}", _("No exact match for “{name}”. Pick the right author below.", name=name))
 
 
 @router.post("/unfollow")
 def unfollow(hc_id: int = Form(...), next: str = Form("/books/new")):
     books_db.unfollow_author(hc_id)
-    return _redirect(auth.safe_next(next), "Unfollowed.")
+    return _redirect(auth.safe_next(next), _("Unfollowed."))
 
 
 # --- series ---------------------------------------------------------------------------------------
@@ -269,14 +272,14 @@ def unfollow(hc_id: int = Form(...), next: str = Form("/books/new")):
 @router.post("/series/new")
 def new_series(name: str = Form(...), author: str = Form("")):
     sid = books_db.create_series(name, author)
-    return _redirect(f"/books/series/{sid}", "Series created. Add books to it with search.")
+    return _redirect(f"/books/series/{sid}", _("Series created. Add books to it with search."))
 
 
 @router.get("/series/{series_id}")
 def series_page(request: Request, series_id: int, notice: str = ""):
     s = books_db.get_series(series_id)
     if s is None:
-        return _redirect("/books", "That series no longer exists.")
+        return _redirect("/books", _("That series no longer exists."))
     books = books_db.series_books(series_id)
     counted = [b for b in books if b["status"] != "skip"]
     return templates.TemplateResponse(request, "book_series.html", {
@@ -302,14 +305,14 @@ def presets_page(request: Request, series_id: str = "", notice: str = ""):
 @router.post("/presets/{key}/apply")
 def apply_preset(key: str, series_id: str = Form("new"), mark_unread: str = Form("")):
     if key not in presets.PRESETS:
-        return _redirect("/books/presets", "Unknown preset.")
+        return _redirect("/books/presets", _("Unknown preset."))
     target = None if series_id == "new" else _int_or_none(series_id)
     if target is not None and books_db.get_series(target) is None:
-        return _redirect("/books/presets", "That series no longer exists.")
+        return _redirect("/books/presets", _("That series no longer exists."))
     sid, st = presets.apply_preset(key, target, mark_unread=bool(mark_unread))
-    moved = f" ({st['moved']} moved in from other series)" if st["moved"] else ""
-    msg = (f"Reading map applied: {st['matched']} book{'s' if st['matched'] != 1 else ''} matched{moved}, "
-           f"{st['created']} added.")
+    moved = " " + _("({n} moved in from other series)", n=st["moved"]) if st["moved"] else ""
+    msg = (ngettext("Reading map applied: {n} book matched", "Reading map applied: {n} books matched", st["matched"])
+           + moved + _(", {n} added.", n=st["created"]))
     return _redirect(f"/books/series/{sid}?view=map", msg)
 
 
@@ -350,13 +353,13 @@ def map_start(series_id: int):
     if books_db.get_series(series_id) is None:
         return _redirect("/books")
     books_db.start_map(series_id)
-    return _editor(series_id, notice="Map started with one arc holding every book. Add sections and arcs, then place books.")
+    return _editor(series_id, notice=_("Map started with one arc holding every book. Add sections and arcs, then place books."))
 
 
 @router.post("/series/{series_id}/map/delete")
 def map_delete(series_id: int):
     books_db.clear_map(series_id)
-    return _redirect(f"/books/series/{series_id}", "Reading map removed. The books are untouched.")
+    return _redirect(f"/books/series/{series_id}", _("Reading map removed. The books are untouched."))
 
 
 @router.post("/series/{series_id}/map/section")
@@ -366,46 +369,47 @@ def map_add_section(series_id: int, kind: str = Form("row"), name: str = Form(""
         return _redirect("/books")
     if not books_db.has_map(series_id):
         books_db.set_map_meta(series_id, None, 150)
-    sid = books_db.add_section(series_id, kind, name or "New section", color, hint)
-    return _editor(series_id, f"sec{sid}", "Section added.")
+    sid = books_db.add_section(series_id, kind, name or _("New section"), color, hint)
+    return _editor(series_id, f"sec{sid}", _("Section added."))
 
 
 @router.post("/map/section/{section_id}/{action}")
 def map_section_action(section_id: int, action: str, name: str = Form(""), color: str = Form("#5ec2a3"),
-                       hint: str = Form(""), kind: str = Form(""), auto_wire: str = Form(""), direction: str = Form("up")):
+                       hint: str = Form(""), kind: str = Form(""), auto_wire: str = Form(""), direction: str = Form("up"),
+                       name_fr: str = Form(""), hint_fr: str = Form("")):
     series_id = books_db.section_series(section_id)
     if series_id is None:
         return _redirect("/books")
     if action == "edit":
-        books_db.update_section(section_id, name, color, hint, kind, bool(auto_wire))
-        return _editor(series_id, f"sec{section_id}", "Section saved.")
+        books_db.update_section(section_id, name, color, hint, kind, bool(auto_wire), name_fr, hint_fr)
+        return _editor(series_id, f"sec{section_id}", _("Section saved."))
     if action == "move":
         books_db.move_section(section_id, direction)
         return _editor(series_id, f"sec{section_id}")
     if action == "delete":
         books_db.delete_section(section_id)
-        return _editor(series_id, notice="Section removed. Its books are back under “Not placed”.")
+        return _editor(series_id, notice=_("Section removed. Its books are back under “Not placed”."))
     if action == "add-group":
-        gid = books_db.add_group(section_id, name or "New arc", color)
-        return _editor(series_id, f"grp{gid}", "Arc added.")
+        gid = books_db.add_group(section_id, name or _("New arc"), color)
+        return _editor(series_id, f"grp{gid}", _("Arc added."))
     return _editor(series_id)
 
 
 @router.post("/map/group/{group_id}/{action}")
 def map_group_action(group_id: int, action: str, name: str = Form(""), color: str = Form("#5ec2a3"),
-                     hint: str = Form(""), loose: str = Form(""), direction: str = Form("up")):
+                     hint: str = Form(""), loose: str = Form(""), direction: str = Form("up"), name_fr: str = Form("")):
     series_id = books_db.group_series(group_id)
     if series_id is None:
         return _redirect("/books")
     if action == "edit":
-        books_db.update_group(group_id, name, color, hint, bool(loose))
-        return _editor(series_id, f"grp{group_id}", "Arc saved.")
+        books_db.update_group(group_id, name, color, hint, bool(loose), name_fr)
+        return _editor(series_id, f"grp{group_id}", _("Arc saved."))
     if action == "move":
         books_db.move_group(group_id, direction)
         return _editor(series_id, f"grp{group_id}")
     if action == "delete":
         books_db.delete_group(group_id)
-        return _editor(series_id, notice="Arc removed. Its books are back under “Not placed”.")
+        return _editor(series_id, notice=_("Arc removed. Its books are back under “Not placed”."))
     return _editor(series_id)
 
 
@@ -441,33 +445,35 @@ def map_entry_action(entry_id: int, action: str, direction: str = Form("up"), ro
 def map_add_link(series_id: int, from_id: int = Form(...), to_id: int = Form(...), kind: str = Form("cross")):
     a, b = books_db.get_book(from_id), books_db.get_book(to_id)
     if not a or not b or a["series_id"] != series_id or b["series_id"] != series_id or from_id == to_id:
-        return _editor(series_id, "links", "Pick two different books from this series.")
+        return _editor(series_id, "links", _("Pick two different books from this series."))
     books_db.add_link(series_id, f"book:{from_id}", f"book:{to_id}", kind if kind in books_db.LINK_KINDS else "cross")
-    return _editor(series_id, "links", "Link added.")
+    return _editor(series_id, "links", _("Link added."))
 
 
 @router.post("/series/{series_id}/map/link/{link_id}/delete")
 def map_delete_link(series_id: int, link_id: int):
     books_db.delete_link(link_id, series_id)
-    return _editor(series_id, "links", "Link removed.")
+    return _editor(series_id, "links", _("Link removed."))
 
 
 @router.post("/series/{series_id}/edit")
-def edit_series(series_id: int, name: str = Form(...), author: str = Form(""), notes: str = Form("")):
+def edit_series(series_id: int, name: str = Form(...), author: str = Form(""), notes: str = Form(""),
+                name_fr: str = Form("")):
     books_db.update_series(series_id, name, author, notes)
-    return _redirect(f"/books/series/{series_id}", "Saved.")
+    books_db.set_series_name_fr(series_id, name_fr)
+    return _redirect(f"/books/series/{series_id}", _("Saved."))
 
 
 @router.post("/series/{series_id}/delete")
 def delete_series(series_id: int):
     books_db.delete_series(series_id)
-    return _redirect("/books", "Series deleted.")
+    return _redirect("/books", _("Series deleted."))
 
 
 @router.post("/series/{series_id}/reset-order")
 def reset_order(series_id: int):
     books_db.reset_order(series_id)
-    return _redirect(f"/books/series/{series_id}", "Read order reset to series numbering.")
+    return _redirect(f"/books/series/{series_id}", _("Read order reset to series numbering."))
 
 
 @router.post("/series/{series_id}/order")
@@ -491,9 +497,25 @@ async def sync_series(series_id: int):
     try:
         data = await hardcover.get_series(s["hc_id"])
     except hardcover.HardcoverError as exc:
-        return _redirect(f"/books/series/{series_id}", f"Sync failed: {exc}")
+        return _redirect(f"/books/series/{series_id}", _("Sync failed: {error}", error=exc))
     added = books_db.import_series_books(series_id, data["books"])
-    return _redirect(f"/books/series/{series_id}", f"Synced with Hardcover: {added} new book{'s' if added != 1 else ''}.")
+    return _redirect(f"/books/series/{series_id}",
+                     ngettext("Synced with Hardcover: {n} new book.", "Synced with Hardcover: {n} new books.", added))
+
+
+@router.post("/series/{series_id}/french-titles")
+async def french_titles(series_id: int):
+    if books_db.get_series(series_id) is None:
+        return _redirect("/books")
+    checked, changed = await watcher.fill_french_titles(series_id)
+    books = books_db.series_books(series_id)
+    with_fr = sum(1 for b in books if b["title_fr"])
+    if not checked:
+        return _redirect(f"/books/series/{series_id}",
+                         _("No books here are linked to Hardcover yet, so there's nothing to look up."))
+    return _redirect(f"/books/series/{series_id}",
+                     _("French titles: {found} of {total} books have one ({changed} new or updated).",
+                       found=with_fr, total=len(books), changed=changed))
 
 
 @router.get("/series/{series_id}/link")
@@ -504,7 +526,7 @@ async def link_series_page(request: Request, series_id: int, q: str = ""):
     q = q.strip() or s["name"]
     ctx = {"tab": "books", "s": s, "q": q, "hits": [], "errors": []}
     if not hardcover.enabled():
-        ctx["errors"].append("Hardcover is not configured (HARDCOVER_TOKEN is empty).")
+        ctx["errors"].append(_("Hardcover is not configured (HARDCOVER_TOKEN is empty)."))
     else:
         try:
             ctx["hits"] = await hardcover.search_series(q)
@@ -520,14 +542,15 @@ async def link_series(series_id: int, hc_id: str = Form(...)):
         return _redirect("/books")
     other = books_db.find_series_by_hc(hc)
     if other and other["id"] != series_id:
-        return _redirect(f"/books/series/{other['id']}", "That Hardcover series is already linked to this one.")
+        return _redirect(f"/books/series/{other['id']}", _("That Hardcover series is already linked to this one."))
     try:
         data = await hardcover.get_series(hc)
     except hardcover.HardcoverError as exc:
-        return _redirect(f"/books/series/{series_id}", f"Link failed: {exc}")
+        return _redirect(f"/books/series/{series_id}", _("Link failed: {error}", error=exc))
     books_db.link_series_hc(series_id, hc, data["slug"])
     added = books_db.import_series_books(series_id, data["books"])
-    return _redirect(f"/books/series/{series_id}", f"Linked to Hardcover, {added} book{'s' if added != 1 else ''} added.")
+    return _redirect(f"/books/series/{series_id}",
+                     ngettext("Linked to Hardcover, {n} book added.", "Linked to Hardcover, {n} books added.", added))
 
 
 @router.post("/series/{series_id}/recommend")
@@ -535,7 +558,7 @@ async def recommend_series(series_id: int):
     try:
         await recommender.recommend("series", series_id)
     except recommender.RecommendError as exc:
-        return _redirect(f"/books/series/{series_id}", f"Recommendation failed: {exc}")
+        return _redirect(f"/books/series/{series_id}", _("Recommendation failed: {error}", error=exc))
     return _redirect(f"/books/series/{series_id}#recs")
 
 
@@ -545,7 +568,7 @@ async def recommend_series(series_id: int):
 def book_page(request: Request, book_id: int, notice: str = ""):
     b = books_db.get_book(book_id)
     if b is None:
-        return _redirect("/books", "That book no longer exists.")
+        return _redirect("/books", _("That book no longer exists."))
     return templates.TemplateResponse(request, "book_detail.html", {
         "tab": "books", "b": b, "notice": notice,
         "series": books_db.get_series(b["series_id"]) if b["series_id"] else None,
@@ -576,9 +599,9 @@ async def book_lookup(book_id: int):
         return _redirect("/books")
     source = await watcher.lookup_one(b)
     if source:
-        return _redirect(f"/books/book/{book_id}", f"Found it on {source}. Cover and details filled in.")
+        return _redirect(f"/books/book/{book_id}", _("Found it on {source}. Cover and details filled in.", source=source))
     return _redirect(f"/books/book/{book_id}",
-                     "Not listed on Hardcover or Open Library yet. The app keeps checking every few hours.")
+                     _("Not listed on Hardcover or Open Library yet. The app keeps checking every few hours."))
 
 
 @router.post("/book/{book_id}/read-above")
@@ -587,15 +610,19 @@ def book_read_above(book_id: int):
     if b is None or not b["series_id"]:
         return _redirect("/books")
     n = books_db.mark_read_before(book_id)
-    msg = f"Marked {n} book{'s' if n != 1 else ''} as read." if n else "Everything above was already read."
+    msg = ngettext("Marked {n} book as read.", "Marked {n} books as read.", n) if n else _("Everything above was already read.")
     return _redirect(f"/books/series/{b['series_id']}#b{book_id}", msg)
 
 
 @router.post("/book/{book_id}/edit")
 def book_edit(book_id: int, title: str = Form(...), author: str = Form(""), year: str = Form(""),
-              position: str = Form(""), notes: str = Form("")):
+              position: str = Form(""), notes: str = Form(""), title_fr: str | None = Form(None)):
+    before = books_db.get_book(book_id)
     books_db.update_book(book_id, title, author, _int_or_none(year), position, notes)
-    return _redirect(f"/books/book/{book_id}", "Saved.")
+    # Only a changed French title counts as yours: saving with Hardcover's untouched keeps it automatic.
+    if before is not None and title_fr is not None and title_fr.strip() != (before["title_fr"] or ""):
+        books_db.set_manual_fr_title(book_id, title_fr)
+    return _redirect(f"/books/book/{book_id}", _("Saved."))
 
 
 @router.post("/book/{book_id}/series")
@@ -610,7 +637,7 @@ def book_series(book_id: int, series_id: str = Form(""), new_series: str = Form(
         if target is not None and books_db.get_series(target) is None:
             target = None
     books_db.assign_series(book_id, target)
-    return _redirect(f"/books/book/{book_id}", "Moved to series." if target else "Now a standalone book.")
+    return _redirect(f"/books/book/{book_id}", _("Moved to series.") if target else _("Now a standalone book."))
 
 
 @router.post("/book/{book_id}/delete")
@@ -618,8 +645,8 @@ def book_delete(book_id: int):
     b = books_db.get_book(book_id)
     books_db.delete_book(book_id)
     if b and b["series_id"]:
-        return _redirect(f"/books/series/{b['series_id']}", "Book removed.")
-    return _redirect("/books", "Book removed.")
+        return _redirect(f"/books/series/{b['series_id']}", _("Book removed."))
+    return _redirect("/books", _("Book removed."))
 
 
 @router.post("/book/{book_id}/recommend")
@@ -627,5 +654,5 @@ async def recommend_book(book_id: int):
     try:
         await recommender.recommend("book", book_id)
     except recommender.RecommendError as exc:
-        return _redirect(f"/books/book/{book_id}", f"Recommendation failed: {exc}")
+        return _redirect(f"/books/book/{book_id}", _("Recommendation failed: {error}", error=exc))
     return _redirect(f"/books/book/{book_id}#recs")

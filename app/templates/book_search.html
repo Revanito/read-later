@@ -1,40 +1,40 @@
 {% extends "base.html" %}
 {% import "_books.html" as ui %}
-{% block title %}Search books - read-later{% endblock %}
+{% block title %}{{ _("Search books") }} - read-later{% endblock %}
 {% block main_class %}wide{% endblock %}
 {% block content %}
-  <a class="back" href="{{ '/books/series/' ~ target_series['id'] if target_series else '/books' }}">&larr; {{ target_series['name'] if target_series else 'Books' }}</a>
+  <a class="back" href="{{ '/books/series/' ~ target_series['id'] if target_series else '/books' }}">&larr; {{ sn(target_series) if target_series else _('Books') }}</a>
 
   <form action="/books/search" method="get" class="book-search">
-    <input type="search" name="q" value="{{ q }}" placeholder="Search a book, author or series..." required autofocus>
-    <select name="type" aria-label="Search for">
-      <option value="book"{% if kind == 'book' %} selected{% endif %}>Books</option>
-      <option value="series"{% if kind == 'series' %} selected{% endif %}{% if not hardcover_enabled %} disabled{% endif %}>Series{% if not hardcover_enabled %} (needs Hardcover){% endif %}</option>
+    <input type="search" name="q" value="{{ q }}" placeholder="{{ _('Search a book, author or series...') }}" required autofocus>
+    <select name="type" aria-label="{{ _('Search for') }}">
+      <option value="book"{% if kind == 'book' %} selected{% endif %}>{{ _("Books") }}</option>
+      <option value="series"{% if kind == 'series' %} selected{% endif %}{% if not hardcover_enabled %} disabled{% endif %}>{{ _("Series") }}{% if not hardcover_enabled %} {{ _("(needs Hardcover)") }}{% endif %}</option>
     </select>
     {% if target_series %}<input type="hidden" name="series_id" value="{{ target_series['id'] }}">{% endif %}
-    <button type="submit">Search</button>
+    <button type="submit">{{ _("Search") }}</button>
   </form>
 
   {% if target_series %}
-    <div class="notice notice-inline">Adding to <strong>{{ target_series['name'] }}</strong>. New books go to the end of its read order.</div>
+    <div class="notice notice-inline">{{ _("Adding to {series}. New books go to the end of its read order.", series=sn(target_series)) }}</div>
   {% endif %}
   {% for e in errors %}<div class="notice notice-error">{{ e }}</div>{% endfor %}
 
   {% if kind == 'series' and q %}
-    {% if not series_hits and not errors %}<p class="empty">No series found for “{{ q }}”.</p>{% endif %}
+    {% if not series_hits and not errors %}<p class="empty">{{ _("No series found for “{q}”.", q=q) }}</p>{% endif %}
     <div class="hit-grid">
       {% for s in series_hits %}
         <div class="hit hit-series">
           <div class="hit-body">
             <div class="hit-title">{{ s.name }}</div>
-            <div class="meta">{{ s.author or 'Unknown author' }} &middot; {{ s.books_count }} book{{ 's' if s.books_count != 1 }}</div>
+            <div class="meta">{{ s.author or _("Unknown author") }} &middot; {{ ngettext("{n} book", "{n} books", s.books_count) }}</div>
             {% if s.sample_titles %}<div class="meta sample">{{ s.sample_titles | join(' · ') }}</div>{% endif %}
             {% if s.local_id %}
-              <a class="btn-small" href="/books/series/{{ s.local_id }}">In your library &rarr;</a>
+              <a class="btn-small" href="/books/series/{{ s.local_id }}">{{ _("In your library") }} &rarr;</a>
             {% else %}
               <form action="/books/import-series" method="post">
                 <input type="hidden" name="hc_id" value="{{ s.hc_id }}">
-                <button type="submit" class="btn-small btn-accent">Import series + read order</button>
+                <button type="submit" class="btn-small btn-accent">{{ _("Import series + read order") }}</button>
               </form>
             {% endif %}
           </div>
@@ -43,19 +43,19 @@
     </div>
   {% elif q %}
     {% if hardcover_enabled %}
-      <h2 class="section-title">Hardcover <span class="meta">has series and read order</span></h2>
-      {% if not hc_hits %}<p class="meta">No Hardcover results.</p>{% endif %}
+      <h2 class="section-title">Hardcover <span class="meta">{{ _("has series and read order") }}</span></h2>
+      {% if not hc_hits %}<p class="meta">{{ _("No Hardcover results.") }}</p>{% endif %}
       <div class="hit-grid">
         {% for h in hc_hits %}{{ ui.hit_card(h, all_series, target_series) }}{% endfor %}
       </div>
     {% endif %}
     <h2 class="section-title">Open Library</h2>
-    {% if not ol_hits %}<p class="meta">No Open Library results.</p>{% endif %}
+    {% if not ol_hits %}<p class="meta">{{ _("No Open Library results.") }}</p>{% endif %}
     <div class="hit-grid">
       {% for h in ol_hits %}{{ ui.hit_card(h, all_series, target_series) }}{% endfor %}
     </div>
 
-    <h2 class="section-title">Can't find it?</h2>
+    <h2 class="section-title">{{ _("Can't find it?") }}</h2>
     {{ ui.manual_form(all_series, target_series, title=q, author=target_series['author'] if target_series else '',
                       open=not hc_hits and not ol_hits) }}
   {% endif %}

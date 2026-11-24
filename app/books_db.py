@@ -151,9 +151,111 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+# Columns added after a table first shipped: CREATE TABLE IF NOT EXISTS won't add them to an existing
+# database, so they're added here on start-up.
+_ADDED_COLUMNS = {
+    "books": {"title_fr": "TEXT", "fr_source": "TEXT", "fr_checked_at": "TEXT"},
+    "series": {"name_fr": "TEXT"},
+    "map_sections": {"name_fr": "TEXT", "hint_fr": "TEXT"},
+    "map_groups": {"name_fr": "TEXT", "hint_fr": "TEXT"},
+    "map_entries": {"sub_fr": "TEXT"},
+    "map_lines": {"name_fr": "TEXT"},
+}
+
+
 def init_books_db() -> None:
     with get_conn() as conn:
         conn.executescript(_SCHEMA)
+        for table, cols in _ADDED_COLUMNS.items():
+            have = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
+            for col, typ in cols.items():
+                if col not in have:
+                    conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {typ}")
+
+
+# --- French titles / names -------------------------------------------------------------------------
+# A book's French title comes from Hardcover (most popular French edition, fr_source='hc') or is typed
+# in by hand (fr_source='manual', never overwritten). Display helpers pick it when the UI is French.
+
+def _row_get(row, key):
+    try:
+        return row[key]
+    except (KeyError, IndexError):
+        return None
+
+
+def display_title(row) -> str:
+    from i18n import get_lang
+    if get_lang() == "fr":
+        fr = _row_get(row, "title_fr")
+        if fr:
+            return fr
+    return _row_get(row, "title") or ""
+
+
+def display_name(row) -> str:
+    from i18n import get_lang
+    if row is None:
+        return ""
+    if get_lang() == "fr":
+        fr = _row_get(row, "name_fr")
+        if fr:
+            return fr
+    return _row_get(row, "name") or ""
+
+
+def books_needing_fr(limit: int, max_age_days: int = 30, series_id: int | None = None) -> list[sqlite3.Row]:
+    """Hardcover-linked books whose French title was never looked up (or long ago), skipping manual ones."""
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=max_age_days)).isoformat()
+    sql = """SELECT * FROM books WHERE hc_id IS NOT NULL AND COALESCE(fr_source, '') != 'manual'
+             AND (fr_checked_at IS NULL OR fr_checked_at < ?)"""
+    args: list = [cutoff]
+    if series_id is not None:
+        sql = """SELECT * FROM books WHERE hc_id IS NOT NULL AND COALESCE(fr_source, '') != 'manual'
+                 AND series_id = ?"""
+        args = [series_id]
+    with get_conn() as conn:
+        return conn.execute(sql + " ORDER BY fr_checked_at IS NOT NULL, id LIMIT ?", (*args, limit)).fetchall()
+
+
+def store_fr_titles(found: dict[int, str], checked_ids: list[int]) -> int:
+    """Save looked-up French titles (by book id); mark every checked book so it isn't retried soon.
+    Manual titles are never touched. Returns how many titles were set or changed."""
+    changed = 0
+    now = _now()
+    with get_conn() as conn:
+        for book_id in checked_ids:
+            row = conn.execute("SELECT title_fr, fr_source FROM books WHERE id = ?", (book_id,)).fetchone()
+            if row is None or row["fr_source"] == "manual":
+                continue
+            title = found.get(book_id)
+            if title:
+                if row["title_fr"] != title:
+                    changed += 1
+                conn.execute("UPDATE books SET title_fr = ?, fr_source = 'hc', fr_checked_at = ? WHERE id = ?",
+                             (title, now, book_id))
+            else:
+                conn.execute("UPDATE books SET fr_checked_at = ? WHERE id = ?", (now, book_id))
+    return changed
+
+
+def set_manual_fr_title(book_id: int, title_fr: str) -> None:
+    """A French title typed on the book page. Empty clears it and lets Hardcover fill it again."""
+    title_fr = title_fr.strip()
+    with get_conn() as conn:
+        if title_fr:
+            conn.execute("UPDATE books SET title_fr = ?, fr_source = 'manual' WHERE id = ?", (title_fr, book_id))
+        else:
+            conn.execute(
+                """UPDATE books SET title_fr = CASE WHEN fr_source = 'manual' THEN NULL ELSE title_fr END,
+                       fr_source = CASE WHEN fr_source = 'manual' THEN NULL ELSE fr_source END,
+                       fr_checked_at = CASE WHEN fr_source = 'manual' THEN NULL ELSE fr_checked_at END
+                   WHERE id = ?""", (book_id,))
+
+
+def set_series_name_fr(series_id: int, name_fr: str) -> None:
+    with get_conn() as conn:
+        conn.execute("UPDATE series SET name_fr = ? WHERE id = ?", (name_fr.strip() or None, series_id))
 
 
 _NUMBER_WORDS = {w: str(i) for i, w in enumerate(
@@ -408,11 +510,44 @@ def delete_book(book_id: int) -> None:
 # A manual book sits in lookup_queue until it's linked to Hardcover. The background check (watcher.py)
 # retries the lookup; Open Library links fill in cover/year meanwhile but keep it queued for Hardcover.
 
-def find_by_title(title: str) -> sqlite3.Row | None:
-    key = _norm_title(title)
+# Matching books by title alone is wrong as soon as two authors used the same title (Chris Fox's and
+# D.J. Molles's "Sanctuary"), so title matches also need the same author or the same series.
+
+# Marketing tails that databases glue onto titles: "Sanctuary: A Remaining Universe Novel",
+# "The Valley: A Lee Harden Novel", "Book 3 - A Saga". Only tails naming a novel/book/story are cut.
+_TITLE_TAIL = re.compile(r"\s*(?::|\s-\s|\s–\s)\s*(?:an?\s+|the\s+)?[^:]*\b(?:novel|novella|book|story|saga)\b[^:]*$", re.I)
+
+
+def core_title(title: str) -> str:
+    return _norm_title(_TITLE_TAIL.sub("", title or "") or title or "")
+
+
+def titles_match(a: str, b: str) -> bool:
+    return _norm_title(a) == _norm_title(b) or core_title(a) == core_title(b)
+
+
+def author_surnames(authors: str | None) -> set[str]:
+    out = set()
+    for name in (authors or "").split(","):
+        parts = re.sub(r"[^a-z ]+", " ", name.lower()).split()
+        if parts:
+            out.add(parts[-1])
+    return out
+
+
+def same_author(mine: str | None, theirs: str | None) -> bool:
+    """Surname overlap: 'DJ Molles' matches 'D.J. Molles'. An empty author never matches anything."""
+    return bool(author_surnames(mine) & author_surnames(theirs))
+
+
+def find_duplicate(title: str, author: str = "", series_id: int | None = None) -> sqlite3.Row | None:
+    """The book a manual add would duplicate: same title (tails like ": A … Novel" ignored) and either the
+    same author, or the same series. Same title by someone else, elsewhere, is a different book."""
     with get_conn() as conn:
         for r in conn.execute("SELECT * FROM books"):
-            if _norm_title(r["title"]) == key:
+            if not titles_match(r["title"], title):
+                continue
+            if same_author(author, r["author"]) or (series_id is not None and r["series_id"] == series_id):
                 return r
     return None
 
@@ -446,11 +581,11 @@ def mark_lookup_tried(book_id: int) -> None:
         conn.execute("UPDATE lookup_queue SET tried_at = ? WHERE book_id = ?", (_now(), book_id))
 
 
-def find_unlinked_by_title(title: str) -> sqlite3.Row | None:
-    key = _norm_title(title)
+def find_unlinked_by_title(title: str, author: str | None = None) -> sqlite3.Row | None:
+    """A not-yet-linked book with this title; with `author`, only one by the same author."""
     with get_conn() as conn:
         for r in conn.execute("SELECT * FROM books WHERE hc_id IS NULL"):
-            if _norm_title(r["title"]) == key:
+            if titles_match(r["title"], title) and (author is None or same_author(r["author"], author)):
                 return r
     return None
 
@@ -607,11 +742,19 @@ def library_authors() -> list[str]:
     return sorted(seen.values(), key=str.lower)
 
 
-def library_keys() -> tuple[set[int], set[str]]:
-    """Hardcover ids and normalized titles of everything saved, to tell 'new to me' from 'already have'."""
+def library_keys() -> tuple[set[int], dict[str, list[str]]]:
+    """Hardcover ids of everything saved, and core title -> authors, to tell 'new to me' from 'already
+    have'. Use owns_title() on the second: a title only counts as owned by the same author."""
     with get_conn() as conn:
-        rows = conn.execute("SELECT hc_id, title FROM books").fetchall()
-    return {r["hc_id"] for r in rows if r["hc_id"]}, {_norm_title(r["title"]) for r in rows}
+        rows = conn.execute("SELECT hc_id, title, author FROM books").fetchall()
+    titles: dict[str, list[str]] = {}
+    for r in rows:
+        titles.setdefault(core_title(r["title"]), []).append(r["author"] or "")
+    return {r["hc_id"] for r in rows if r["hc_id"]}, titles
+
+
+def owns_title(titles: dict[str, list[str]], title: str, author: str | None) -> bool:
+    return any(same_author(a, author) for a in titles.get(core_title(title), []))
 
 
 def upsert_release(r: dict, reason: str) -> bool:
@@ -650,7 +793,7 @@ def active_releases(today: str, recent_days: int = 14) -> list[dict]:
     cutoff = (datetime.fromisoformat(today) - timedelta(days=recent_days)).date().isoformat()
     out = []
     for r in rows:
-        owned = r["hc_id"] in hc_ids or _norm_title(r["title"]) in titles
+        owned = r["hc_id"] in hc_ids or owns_title(titles, r["title"], r["author"])
         out_now = r["release_date"] <= today
         if owned and not (out_now and r["release_date"] >= cutoff):
             continue
@@ -772,8 +915,8 @@ def set_map_lines(series_id: int, lines: dict) -> None:
     with get_conn() as conn:
         conn.execute("DELETE FROM map_lines WHERE series_id = ?", (series_id,))
         conn.executemany(
-            "INSERT INTO map_lines (series_id, code, name, fill, outline) VALUES (?, ?, ?, ?, ?)",
-            [(series_id, code, v[0], v[1], v[2]) for code, v in lines.items()],
+            "INSERT INTO map_lines (series_id, code, name, fill, outline, name_fr) VALUES (?, ?, ?, ?, ?, ?)",
+            [(series_id, code, v[0], v[1], v[2], v[3] if len(v) > 3 else None) for code, v in lines.items()],
         )
 
 
@@ -823,23 +966,27 @@ def _next_map_order(conn: sqlite3.Connection, table: str, parent_col: str, paren
     return (row["m"] if row["m"] is not None else -1) + 1
 
 
-def create_section(series_id: int, kind: str, name: str, color: str, hint: str = "", auto_wire: bool = True) -> int:
+def create_section(series_id: int, kind: str, name: str, color: str, hint: str = "", auto_wire: bool = True,
+                   name_fr: str = "", hint_fr: str = "") -> int:
     with get_conn() as conn:
         cur = conn.execute(
-            """INSERT INTO map_sections (series_id, sort_order, kind, name, color, hint, auto_wire)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            """INSERT INTO map_sections (series_id, sort_order, kind, name, color, hint, auto_wire, name_fr, hint_fr)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (series_id, _next_map_order(conn, "map_sections", "series_id", series_id), kind,
-             name.strip() or "Untitled", color, hint.strip(), 1 if auto_wire else 0),
+             name.strip() or "Untitled", color, hint.strip(), 1 if auto_wire else 0,
+             name_fr.strip() or None, hint_fr.strip() or None),
         )
         return cur.lastrowid
 
 
-def create_group(section_id: int, name: str, color: str, hint: str = "", loose: bool = False) -> int:
+def create_group(section_id: int, name: str, color: str, hint: str = "", loose: bool = False,
+                 name_fr: str = "", hint_fr: str = "") -> int:
     with get_conn() as conn:
         cur = conn.execute(
-            "INSERT INTO map_groups (section_id, sort_order, name, color, hint, loose) VALUES (?, ?, ?, ?, ?, ?)",
+            """INSERT INTO map_groups (section_id, sort_order, name, color, hint, loose, name_fr, hint_fr)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
             (section_id, _next_map_order(conn, "map_groups", "section_id", section_id), name.strip() or "Untitled",
-             color, hint.strip(), 1 if loose else 0),
+             color, hint.strip(), 1 if loose else 0, name_fr.strip() or None, hint_fr.strip() or None),
         )
         return cur.lastrowid
 
@@ -855,14 +1002,14 @@ def set_section_exit(section_id: int, book_id: int | None) -> None:
 
 
 def add_entry(group_id: int, book_id: int, row: int = 0, indent: int = 0, sub: str = "", lines: str = "",
-              stories: str = "", list_order: int | None = None) -> int:
+              stories: str = "", list_order: int | None = None, sub_fr: str = "") -> int:
     with get_conn() as conn:
         conn.execute("DELETE FROM map_entries WHERE book_id = ?", (book_id,))
         cur = conn.execute(
-            """INSERT INTO map_entries (group_id, book_id, sort_order, row, indent, sub, lines, stories, list_order)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            """INSERT INTO map_entries (group_id, book_id, sort_order, row, indent, sub, lines, stories, list_order, sub_fr)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (group_id, book_id, _next_map_order(conn, "map_entries", "group_id", group_id), row, indent, sub, lines,
-             stories, list_order),
+             stories, list_order, sub_fr or None),
         )
         return cur.lastrowid
 
@@ -913,12 +1060,33 @@ def map_json(series_id: int) -> dict | None:
         books = {b["id"]: b for b in conn.execute(
             "SELECT * FROM books WHERE series_id = ? ORDER BY sort_order, id", (series_id,))}
         links = conn.execute("SELECT * FROM map_links WHERE series_id = ? ORDER BY id", (series_id,)).fetchall()
-        lines = {r["code"]: [r["name"], r["fill"], r["outline"]]
-                 for r in conn.execute("SELECT * FROM map_lines WHERE series_id = ?", (series_id,))}
+        line_rows = conn.execute("SELECT * FROM map_lines WHERE series_id = ?", (series_id,)).fetchall()
         meta = conn.execute("SELECT * FROM map_meta WHERE series_id = ?", (series_id,)).fetchone()
+
+    from i18n import _, get_lang
+    fr = get_lang() == "fr"
+
+    def loc(row, field):
+        """The French variant of a field when the UI is French and one exists."""
+        if fr:
+            v = _row_get(row, f"{field}_fr")
+            if v:
+                return v
+        return _row_get(row, field) or ""
+
+    lines = {r["code"]: [loc(r, "name"), r["fill"], r["outline"]] for r in line_rows}
 
     def default_sub(b):
         return f"#{b['position_label']}" if b["position_label"] else (str(b["year"]) if b["year"] else "")
+
+    def node(b, e=None):
+        return {
+            "id": b["id"], "title": display_title(b), "title_orig": b["title"], "status": b["status"],
+            "cover": b["cover_url"] or "", "sub": (loc(e, "sub") if e else "") or default_sub(b),
+            "lines": ((e["lines"] if e else "") or "").split(),
+            "stories": [x for x in ((e["stories"] if e else "") or "").split("\n") if x],
+            "o": e["list_order"] if e else None, "entry": e["id"] if e else None,
+        }
 
     nodes, placed, sections, sec_index = {}, set(), [], {}
     for i, sec in enumerate(structure):
@@ -932,27 +1100,23 @@ def map_json(series_id: int) -> dict | None:
                 r = rows.setdefault(e["row"], {"indent": e["indent"], "seq": e["row"] not in g["noseq"], "ids": []})
                 r["ids"].append(b["id"])
                 placed.add(b["id"])
-                nodes[b["id"]] = {
-                    "id": b["id"], "title": b["title"], "status": b["status"], "cover": b["cover_url"] or "",
-                    "sub": e["sub"] or default_sub(b), "lines": (e["lines"] or "").split(),
-                    "stories": [x for x in (e["stories"] or "").split("\n") if x], "o": e["list_order"], "entry": e["id"],
-                }
-            groups.append({"id": g["g"]["id"], "name": g["g"]["name"], "color": g["g"]["color"],
-                           "hint": g["g"]["hint"] or "", "loose": bool(g["g"]["loose"]) or s["kind"] == "loose",
+                nodes[b["id"]] = node(b, e)
+            groups.append({"id": g["g"]["id"], "name": loc(g["g"], "name"), "color": g["g"]["color"],
+                           "hint": loc(g["g"], "hint"), "loose": bool(g["g"]["loose"]) or s["kind"] == "loose",
                            "rows": [rows[k] for k in sorted(rows)] or [{"indent": 0, "seq": True, "ids": []}]})
-        sections.append({"id": s["id"], "kind": s["kind"], "name": s["name"], "color": s["color"], "hint": s["hint"] or "",
+        sections.append({"id": s["id"], "kind": s["kind"], "name": loc(s, "name"), "color": s["color"], "hint": loc(s, "hint"),
                          "auto": bool(s["auto_wire"]), "exit": s["exit_book"] if s["exit_book"] in placed else None,
                          "groups": groups})
 
     unplaced = [b for b in books.values() if b["id"] not in placed]
     for b in unplaced:
-        nodes[b["id"]] = {"id": b["id"], "title": b["title"], "status": b["status"], "cover": b["cover_url"] or "",
-                          "sub": default_sub(b), "lines": [], "stories": [], "o": None, "entry": None}
+        nodes[b["id"]] = node(b)
     if unplaced:
-        sections.append({"id": None, "kind": "loose", "name": "Not placed in the map yet", "color": "#7f8a99",
-                         "hint": "Books in this series the map doesn't include. Place them from Edit map, or leave them here.",
+        not_placed = _("Not placed in the map yet")
+        sections.append({"id": None, "kind": "loose", "name": not_placed, "color": "#7f8a99",
+                         "hint": _("Books in this series the map doesn't include. Place them from Edit map, or leave them here."),
                          "auto": False, "exit": None, "virtual": True,
-                         "groups": [{"id": None, "name": "Not placed in the map yet", "color": "#7f8a99", "hint": "",
+                         "groups": [{"id": None, "name": not_placed, "color": "#7f8a99", "hint": "",
                                      "loose": True, "rows": [{"indent": 0, "seq": False, "ids": [b["id"] for b in unplaced]}]}]})
 
     def conv(ref: str) -> str | None:
@@ -994,7 +1158,8 @@ def map_json(series_id: int) -> dict | None:
             out_links += [[f"b:{exit_id}", f, "logic"] for f in firsts]
 
     return {"series_id": series_id, "col": (meta["col"] if meta else 150), "preset": meta["preset"] if meta else None,
-            "sections": sections, "nodes": nodes, "links": out_links, "lines": lines, "statuses": STATUSES}
+            "sections": sections, "nodes": nodes, "links": out_links, "lines": lines,
+            "statuses": {k: _(v) for k, v in STATUSES.items()}}
 
 
 # --- map editing (manual maps) ----------------------------------------------------------------------
@@ -1037,7 +1202,8 @@ def add_section(series_id: int, kind: str, name: str, color: str, hint: str = ""
     return sid
 
 
-def update_section(section_id: int, name: str, color: str, hint: str, kind: str, auto_wire: bool) -> None:
+def update_section(section_id: int, name: str, color: str, hint: str, kind: str, auto_wire: bool,
+                   name_fr: str = "", hint_fr: str = "") -> None:
     with get_conn() as conn:
         s = conn.execute("SELECT kind FROM map_sections WHERE id = ?", (section_id,)).fetchone()
         if s is None:
@@ -1045,11 +1211,14 @@ def update_section(section_id: int, name: str, color: str, hint: str, kind: str,
         # Arc-column sections hold several groups, the others exactly one: don't convert between them.
         if kind not in SECTION_KINDS or (kind == "cols") != (s["kind"] == "cols"):
             kind = s["kind"]
-        conn.execute("UPDATE map_sections SET name = ?, color = ?, hint = ?, kind = ?, auto_wire = ? WHERE id = ?",
-                     (name.strip() or "Untitled", color, hint.strip(), kind, 1 if auto_wire else 0, section_id))
+        conn.execute(
+            """UPDATE map_sections SET name = ?, color = ?, hint = ?, kind = ?, auto_wire = ?, name_fr = ?, hint_fr = ?
+               WHERE id = ?""",
+            (name.strip() or "Untitled", color, hint.strip(), kind, 1 if auto_wire else 0,
+             name_fr.strip() or None, hint_fr.strip() or None, section_id))
         if kind != "cols":
-            conn.execute("UPDATE map_groups SET name = ?, color = ?, loose = ? WHERE section_id = ?",
-                         (name.strip() or "Untitled", color, 1 if kind == "loose" else 0, section_id))
+            conn.execute("UPDATE map_groups SET name = ?, color = ?, loose = ?, name_fr = ? WHERE section_id = ?",
+                         (name.strip() or "Untitled", color, 1 if kind == "loose" else 0, name_fr.strip() or None, section_id))
 
 
 def _swap(conn: sqlite3.Connection, table: str, parent_col: str, item_id: int, direction: str) -> None:
@@ -1085,10 +1254,10 @@ def add_group(section_id: int, name: str, color: str) -> int:
     return create_group(section_id, name, color)
 
 
-def update_group(group_id: int, name: str, color: str, hint: str, loose: bool) -> None:
+def update_group(group_id: int, name: str, color: str, hint: str, loose: bool, name_fr: str = "") -> None:
     with get_conn() as conn:
-        conn.execute("UPDATE map_groups SET name = ?, color = ?, hint = ?, loose = ? WHERE id = ?",
-                     (name.strip() or "Untitled", color, hint.strip(), 1 if loose else 0, group_id))
+        conn.execute("UPDATE map_groups SET name = ?, color = ?, hint = ?, loose = ?, name_fr = ? WHERE id = ?",
+                     (name.strip() or "Untitled", color, hint.strip(), 1 if loose else 0, name_fr.strip() or None, group_id))
 
 
 def move_group(group_id: int, direction: str) -> None:
