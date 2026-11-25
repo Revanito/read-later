@@ -164,9 +164,9 @@ def _now() -> str:
 _ADDED_COLUMNS = {
     "books": {"title_fr": "TEXT", "fr_source": "TEXT", "fr_checked_at": "TEXT"},
     "series": {"name_fr": "TEXT", "merged_into": "INTEGER"},
-    "map_sections": {"name_fr": "TEXT", "hint_fr": "TEXT"},
+    "map_sections": {"name_fr": "TEXT", "hint_fr": "TEXT", "eras": "TEXT"},
     "map_groups": {"name_fr": "TEXT", "hint_fr": "TEXT"},
-    "map_entries": {"sub_fr": "TEXT"},
+    "map_entries": {"sub_fr": "TEXT", "note": "TEXT", "note_fr": "TEXT", "style": "TEXT"},
     "map_lines": {"name_fr": "TEXT"},
 }
 
@@ -620,6 +620,55 @@ def delete_research(series_id: int) -> None:
         conn.execute("DELETE FROM order_research WHERE series_id = ?", (series_id,))
 
 
+def _eras(section_row) -> list[dict]:
+    try:
+        eras = json.loads(_row_get(section_row, "eras") or "[]")
+    except ValueError:
+        return []
+    return [e for e in eras if isinstance(e, dict) and isinstance(e.get("from"), int)]
+
+
+def build_lanes_section(series_id: int, name: str, lanes: list[dict], entries: list[dict], links: list[tuple],
+                        eras: list[dict], name_fr: str = "", hint: str = "", hint_fr: str = "") -> int:
+    """Add a lanes section: the main series and its spin-offs side by side, one row per book in reading
+    order (see reading-map.js). Puts the series in that reading order (other books follow, unchanged).
+      lanes:   [{"name", "color", "about", "name_fr", "about_fr"}], left to right
+      entries: [{"book_id", "lane" (index), "sub", "sub_fr", "note", "note_fr", "style" (prequel|companion|"")}]
+               in reading order
+      links:   [(from_book_id, to_book_id, "fork"|"join"|"with")]
+      eras:    [{"name", "sub", "name_fr", "sub_fr", "from" (book_id the era starts with)}]"""
+    sid = create_section(series_id, "lanes", name, (lanes[0]["color"] if lanes else "#7fb6d8"), hint,
+                         auto_wire=False, name_fr=name_fr, hint_fr=hint_fr)
+    with get_conn() as conn:
+        conn.execute("UPDATE map_sections SET eras = ? WHERE id = ?", (json.dumps(eras, ensure_ascii=False), sid))
+    gids = [create_group(sid, ln["name"], ln.get("color") or _LINE_COLORS[k % len(_LINE_COLORS)], ln.get("about") or "",
+                         name_fr=ln.get("name_fr") or "", hint_fr=ln.get("about_fr") or "")
+            for k, ln in enumerate(lanes)]
+    for en in entries:
+        entry_id = add_entry(gids[en["lane"]], en["book_id"], sub=en.get("sub") or "", sub_fr=en.get("sub_fr") or "")
+        with get_conn() as conn:
+            conn.execute("UPDATE map_entries SET note = ?, note_fr = ?, style = ? WHERE id = ?",
+                         (en.get("note") or None, en.get("note_fr") or None, en.get("style") or None, entry_id))
+    for a, b, kind in links:
+        if kind in LANE_LINK_KINDS and a != b:
+            add_link(series_id, f"book:{a}", f"book:{b}", kind)
+    order = [en["book_id"] for en in entries]
+    with get_conn() as conn:
+        rest = [r["id"] for r in conn.execute("SELECT id FROM books WHERE series_id = ? ORDER BY sort_order, id",
+                                              (series_id,)) if r["id"] not in set(order)]
+        _renumber(conn, order + rest)
+    return sid
+
+
+def build_lane_map(series_id: int, name: str, lanes: list[dict], entries: list[dict], links: list[tuple],
+                   eras: list[dict]) -> None:
+    """Replace the series' map with a single lanes section."""
+    clear_map(series_id)
+    set_map_meta(series_id, None, 150)
+    build_lanes_section(series_id, name, lanes, entries, links, eras)
+    renumber_from_map(series_id)
+
+
 _LINE_COLORS = ["#7fb6d8", "#d4934a", "#9a9ccf", "#5ec2a3", "#d77fd2", "#d9c04a", "#d07a7a", "#8fb26f"]
 
 
@@ -1021,12 +1070,17 @@ def save_recs(seed_type: str, seed_id: int, items: list[dict]) -> None:
 
 SECTION_KINDS = {
     "cols": "Arc columns",
+    "lanes": "Lanes (spin-offs beside the main series)",
     "row": "Row (left to right)",
     "chains": "Rows with branches",
     "solo": "Single column",
     "loose": "Any order",
 }
 LINK_KINDS = {"cross": "Crossover (dashed, side to side)", "vdash": "Side story (dashed)", "elbow": "Path (solid)"}
+# Lanes sections (see build_lanes_section) have their own wires: a spin-off forking off a book, a lane
+# ending by joining a book, two books running alongside each other.
+LANE_LINK_KINDS = {"fork": "Branches off into", "join": "Leads into", "with": "Runs alongside"}
+MULTI_GROUP_KINDS = ("cols", "lanes")
 
 
 def _clear_map(conn: sqlite3.Connection, series_id: int) -> None:
@@ -1213,10 +1267,14 @@ def renumber_from_map(series_id: int) -> None:
     """Make the plain series order (Order view, "Read all above") follow the map's list order."""
     with get_conn() as conn:
         ordered: list[int] = []
+        rank = {r["id"]: k for k, r in enumerate(conn.execute(
+            "SELECT id FROM books WHERE series_id = ? ORDER BY sort_order, id", (series_id,)))}
         for sec in _map_structure(conn, series_id):
             entries = [e for g in sec["groups"] for e in g["entries"]]
             if sec["s"]["kind"] == "cols" and any(e["list_order"] is not None for e in entries):
                 entries.sort(key=lambda e: (e["list_order"] is None, e["list_order"] or 0))
+            elif sec["s"]["kind"] == "lanes":  # its reading order IS the series order (drag in Order view)
+                entries.sort(key=lambda e: rank.get(e["book_id"], 1e9))
             ordered += [e["book_id"] for e in entries if e["book_id"] not in ordered]
         rest = [r["id"] for r in conn.execute("SELECT id FROM books WHERE series_id = ? ORDER BY sort_order, id",
                                               (series_id,)) if r["id"] not in set(ordered)]
@@ -1258,27 +1316,45 @@ def map_json(series_id: int) -> dict | None:
             "lines": ((e["lines"] if e else "") or "").split(),
             "stories": [x for x in ((e["stories"] if e else "") or "").split("\n") if x],
             "o": e["list_order"] if e else None, "entry": e["id"] if e else None,
+            "note": (loc(e, "note") if e else "") or "", "style": ((e["style"] if e else "") or ""),
         }
 
     nodes, placed, sections, sec_index = {}, set(), [], {}
+    rank = {bid: k for k, bid in enumerate(books)}  # books come in series order
     for i, sec in enumerate(structure):
         s = sec["s"]
         sec_index[s["id"]] = i
+        if s["kind"] == "lanes":
+            # Reading order = series order: each lane lists its books in that order, and every book
+            # gets its reading position ("o", 1-based within the section) for the row it sits on.
+            for g in sec["groups"]:
+                g["entries"] = sorted(g["entries"], key=lambda e: rank.get(e["book_id"], 1e9))
         groups = []
         for g in sec["groups"]:
             rows: dict[int, dict] = {}
             for e in g["entries"]:
                 b = books[e["book_id"]]
-                r = rows.setdefault(e["row"], {"indent": e["indent"], "seq": e["row"] not in g["noseq"], "ids": []})
+                key = 0 if s["kind"] == "lanes" else e["row"]  # a lane is one sequence, whatever rows it was given
+                r = rows.setdefault(key, {"indent": e["indent"], "seq": key not in g["noseq"], "ids": []})
                 r["ids"].append(b["id"])
                 placed.add(b["id"])
                 nodes[b["id"]] = node(b, e)
             groups.append({"id": g["g"]["id"], "name": loc(g["g"], "name"), "color": g["g"]["color"],
                            "hint": loc(g["g"], "hint"), "loose": bool(g["g"]["loose"]) or s["kind"] == "loose",
                            "rows": [rows[k] for k in sorted(rows)] or [{"indent": 0, "seq": True, "ids": []}]})
-        sections.append({"id": s["id"], "kind": s["kind"], "name": loc(s, "name"), "color": s["color"], "hint": loc(s, "hint"),
-                         "auto": bool(s["auto_wire"]), "exit": s["exit_book"] if s["exit_book"] in placed else None,
-                         "groups": groups})
+        sec_out = {"id": s["id"], "kind": s["kind"], "name": loc(s, "name"), "color": s["color"], "hint": loc(s, "hint"),
+                   "auto": bool(s["auto_wire"]), "exit": s["exit_book"] if s["exit_book"] in placed else None,
+                   "groups": groups}
+        if s["kind"] == "lanes":
+            ids = sorted((i for g in groups for r in g["rows"] for i in r["ids"]), key=lambda i: rank.get(i, 1e9))
+            for k, bid in enumerate(ids):
+                nodes[bid]["o"] = k + 1
+            sec_out["eras"] = [
+                {"name": (era.get("name_fr") if fr and era.get("name_fr") else era.get("name")) or "",
+                 "sub": (era.get("sub_fr") if fr and era.get("sub_fr") else era.get("sub")) or "",
+                 "from": era["from"]}
+                for era in _eras(s) if era.get("from") in set(ids)]
+        sections.append(sec_out)
 
     unplaced = [b for b in books.values() if b["id"] not in placed]
     for b in unplaced:
@@ -1309,7 +1385,7 @@ def map_json(series_id: int) -> dict | None:
 
     # Auto-wiring between consecutive sections (anything built by hand): previous section's exit
     # feeds the next section's start; arc columns merge into the next section's header.
-    real = [i for i, s in enumerate(sections) if not s.get("virtual") and s["kind"] != "loose"]
+    real = [i for i, s in enumerate(sections) if not s.get("virtual") and s["kind"] not in ("loose", "lanes")]
     for prev, cur in zip(real, real[1:]):
         a, b = sections[prev], sections[cur]
         if not b["auto"]:
@@ -1370,7 +1446,8 @@ def entry_series(entry_id: int) -> int | None:
 def add_section(series_id: int, kind: str, name: str, color: str, hint: str = "") -> int:
     kind = kind if kind in SECTION_KINDS else "row"
     sid = create_section(series_id, kind, name, color, hint, auto_wire=True)
-    create_group(sid, "New arc" if kind == "cols" else name, color, "", loose=(kind == "loose"))
+    create_group(sid, "New arc" if kind == "cols" else "Main series" if kind == "lanes" else name, color, "",
+                 loose=(kind == "loose"))
     return sid
 
 
@@ -1381,14 +1458,15 @@ def update_section(section_id: int, name: str, color: str, hint: str, kind: str,
         if s is None:
             return
         # Arc-column sections hold several groups, the others exactly one: don't convert between them.
-        if kind not in SECTION_KINDS or (kind == "cols") != (s["kind"] == "cols"):
+        if kind not in SECTION_KINDS or (kind in MULTI_GROUP_KINDS) != (s["kind"] in MULTI_GROUP_KINDS) \
+                or "lanes" in (kind, s["kind"]) and kind != s["kind"]:
             kind = s["kind"]
         conn.execute(
             """UPDATE map_sections SET name = ?, color = ?, hint = ?, kind = ?, auto_wire = ?, name_fr = ?, hint_fr = ?
                WHERE id = ?""",
             (name.strip() or "Untitled", color, hint.strip(), kind, 1 if auto_wire else 0,
              name_fr.strip() or None, hint_fr.strip() or None, section_id))
-        if kind != "cols":
+        if kind not in MULTI_GROUP_KINDS:
             conn.execute("UPDATE map_groups SET name = ?, color = ?, loose = ?, name_fr = ? WHERE section_id = ?",
                          (name.strip() or "Untitled", color, 1 if kind == "loose" else 0, name_fr.strip() or None, section_id))
 
@@ -1480,7 +1558,8 @@ def update_entry(entry_id: int, row: int, indent: int, sub: str) -> None:
 def map_links_for_edit(series_id: int) -> list[dict]:
     """Book-to-book links with titles, for the editor's crossover list."""
     with get_conn() as conn:
-        rows = conn.execute("SELECT * FROM map_links WHERE series_id = ? AND kind IN ('cross', 'vdash', 'elbow') ORDER BY id",
+        rows = conn.execute("SELECT * FROM map_links WHERE series_id = ? AND kind IN ('cross', 'vdash', 'elbow', 'fork', 'join', 'with') "
+                            "ORDER BY id",
                             (series_id,)).fetchall()
         titles = {r["id"]: r["title"] for r in conn.execute("SELECT id, title FROM books WHERE series_id = ?", (series_id,))}
     out = []

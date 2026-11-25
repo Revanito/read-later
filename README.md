@@ -142,6 +142,7 @@ reading-order charts people post for the Horus Heresy or Discworld. The series p
 |---|---|---|
 | The Horus Heresy + Siege of Terra | wasniahC's *Horus Heresy Reading Order – Narrative Arcs* chart (2022-01-12): Act 1, Act 2's 49 entries in 10 arc columns plus anthologies, Act 3; Siege of Terra appended; the Primarchs and Characters novels added (see below) | 125, with dots for the chart's 23 narrative lines and anthology contents on hover |
 | Discworld | character arcs | 41 novels |
+| Arisen + Raiders + Operators | lane chart (see below): Raiders and Operators beside the main series in story order, prequels where they're best read | 30 |
 
 Applying one matches books you already have by title and aliases (e.g. *Garro* ↔ *Garro (Parts 1–2)*), also
 pulling them in from related series (anything named like the preset, e.g. a separate *Siege of Terra*
@@ -169,6 +170,19 @@ Characters**, with a legion dot each. Three carry a note: *Valdor* (Unification 
 *Sigismund* and *Eidolon*, set on the eve of the Siege, join Act 3's prelude and get **Up next** once
 Act 2 is done.
 
+**Lane charts** (a section of kind *Lanes*): for universes where spin-off series happen *at the same time*
+as the main series. The main series runs down the middle, each spin-off in its own lane beside it, one row
+per book in reading order, with era labels down the left (e.g. *Day 0*, *Years 1–2*, *Main series*). Lines
+show a spin-off **branching off** a book, a lane **leading into** a book of another lane, and two books
+**running alongside** each other (dashed). A lane that goes quiet for a while is dotted. Prequels and
+companions get a dashed card; a yellow **?** marks a placement to confirm (hover for the note). "Up next" is
+per lane, so each thread you're following gets its own badge.
+
+The reading order of a lane chart **is the series order**: drag books in the **Order** view (or use the
+arrows) and they move up or down the chart. The map editor picks each book's lane, its label, the lanes'
+names/colours, and the lines between books. Lane charts come from the *Arisen* preset or from AI research
+(below); a series whose research finds parallel spin-offs gets a "Build a lane chart" option.
+
 **Any other series:** press **+ Build a reading map** on its page. It starts as one arc with every book;
 the editor lets you add sections and arcs, move books between them, reorder, label them ("#3", "Novella"),
 set rows/indents for branching rows, and add crossover / side-story lines. Sections with *auto-wire* on are
@@ -185,6 +199,10 @@ itself). The result is a proposal shown next to your books:
   titles are matched loosely ("Genesis" finds "Arisen: Genesis", "The Shattering" finds "The Shattering:
   Prelude to Cataclysm");
 - the model's notes, caveats and sources (the author's page when there is one) are listed;
+- when spin-off series run in parallel with the main series, the research lays them out as a **lane
+  chart** (lanes, where each spin-off branches off / leads into the main story, eras, and a "?" with the
+  reason on every best-guess placement), ordered by when the stories happen; the author's own
+  recommended order is quoted in the caveats if it differs;
 - **Apply** moves the ticked books in from other series, adds the ticked missing ones as manual books
   (they link to Hardcover later), puts the series in that order and, optionally, builds a reading map:
   one section per line when the lines follow one another (main series, then each spin-off), or a single

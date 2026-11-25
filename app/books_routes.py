@@ -307,11 +307,12 @@ async def research_start(series_id: int):
 
 
 @router.post("/series/{series_id}/research/apply")
-def research_apply(series_id: int, add: list[str] = Form([]), reorder: str = Form(""), build_map: str = Form("")):
+def research_apply(series_id: int, add: list[str] = Form([]), reorder: str = Form(""), build_map: str = Form(""),
+                   build_lanes: str = Form("")):
     if books_db.get_series(series_id) is None:
         return _redirect("/books", _("That series no longer exists."))
     picked = {i for i in (_int_or_none(x) for x in add) if i is not None}
-    st = research.apply(series_id, picked, bool(reorder), bool(build_map))
+    st = research.apply(series_id, picked, bool(reorder), bool(build_map), bool(build_lanes))
     books_db.delete_research(series_id)
     parts = [ngettext("{n} book added", "{n} books added", st["added"])]
     if st["moved"]:
@@ -387,7 +388,8 @@ def map_edit_page(request: Request, series_id: int, notice: str = ""):
     return templates.TemplateResponse(request, "book_map_edit.html", {
         "tab": "books", "s": s, "notice": notice, "data": books_db.map_editor_data(series_id),
         "links": books_db.map_links_for_edit(series_id), "kinds": books_db.SECTION_KINDS,
-        "link_kinds": books_db.LINK_KINDS, "meta": books_db.get_map_meta(series_id),
+        "link_kinds": books_db.LINK_KINDS, "lane_link_kinds": books_db.LANE_LINK_KINDS,
+        "meta": books_db.get_map_meta(series_id),
     })
 
 
@@ -489,7 +491,8 @@ def map_add_link(series_id: int, from_id: int = Form(...), to_id: int = Form(...
     a, b = books_db.get_book(from_id), books_db.get_book(to_id)
     if not a or not b or a["series_id"] != series_id or b["series_id"] != series_id or from_id == to_id:
         return _editor(series_id, "links", _("Pick two different books from this series."))
-    books_db.add_link(series_id, f"book:{from_id}", f"book:{to_id}", kind if kind in books_db.LINK_KINDS else "cross")
+    ok = kind in books_db.LINK_KINDS or kind in books_db.LANE_LINK_KINDS
+    books_db.add_link(series_id, f"book:{from_id}", f"book:{to_id}", kind if ok else "cross")
     return _editor(series_id, "links", _("Link added."))
 
 

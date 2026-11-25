@@ -20,7 +20,7 @@
         <option value="">{{ _("Not placed") }}</option>
         {% for sec, g in groups %}
           <option value="{{ g['id'] }}"{% if g['id'] == current_gid %} selected{% endif %}>
-            {{ sec['name'] }}{% if sec['kind'] == 'cols' %} › {{ g['name'] }}{% endif %}
+            {{ sec['name'] }}{% if sec['kind'] in ('cols', 'lanes') %} › {{ g['name'] }}{% endif %}
           </option>
         {% endfor %}
       </select>
@@ -36,7 +36,7 @@
         <input type="text" name="name_fr" value="{{ sx['name_fr'] or '' }}" placeholder="{{ _('French name') }}" aria-label="{{ _('French name') }}" class="grow">
         <select name="kind" aria-label="{{ _('Kind') }}">
           {% for k, label in kinds.items() %}
-            {% if (k == 'cols') == (sx['kind'] == 'cols') %}
+            {% if (sx['kind'] == 'lanes' and k == 'lanes') or (sx['kind'] != 'lanes' and k != 'lanes' and (k == 'cols') == (sx['kind'] == 'cols')) %}
               <option value="{{ k }}"{% if k == sx['kind'] %} selected{% endif %}>{{ _(label) }}</option>
             {% endif %}
           {% endfor %}
@@ -50,11 +50,11 @@
       <div class="edit-tools">
         <form action="/books/map/section/{{ sx['id'] }}/move" method="post"><input type="hidden" name="direction" value="up"><button type="submit" class="btn-small" aria-label="{{ _('Move section up') }}">&uarr;</button></form>
         <form action="/books/map/section/{{ sx['id'] }}/move" method="post"><input type="hidden" name="direction" value="down"><button type="submit" class="btn-small" aria-label="{{ _('Move section down') }}">&darr;</button></form>
-        {% if sx['kind'] == 'cols' %}
+        {% if sx['kind'] in ('cols', 'lanes') %}
           <form action="/books/map/section/{{ sx['id'] }}/add-group" method="post" class="inline">
-            <input type="text" name="name" placeholder="{{ _('New arc name') }}" aria-label="{{ _('New arc name') }}">
+            <input type="text" name="name" placeholder="{{ _('New lane name') if sx['kind'] == 'lanes' else _('New arc name') }}" aria-label="{{ _('New arc name') }}">
             <input type="color" name="color" value="#5b9bd5" aria-label="{{ _('Arc colour') }}">
-            <button type="submit" class="btn-small btn-accent">{{ _("+ Arc") }}</button>
+            <button type="submit" class="btn-small btn-accent">{{ _("+ Lane") if sx['kind'] == 'lanes' else _("+ Arc") }}</button>
           </form>
         {% endif %}
         <form action="/books/map/section/{{ sx['id'] }}/delete" method="post" onsubmit='return confirm({{ _("Remove this section? Its books go back to Not placed.") | tojson }});'>
@@ -66,7 +66,7 @@
         {% for grp in sec.groups %}
           {% set g = grp.g %}
           <div class="edit-group" id="grp{{ g['id'] }}" style="--arc: {{ g['color'] }}">
-            {% if sx['kind'] == 'cols' %}
+            {% if sx['kind'] in ('cols', 'lanes') %}
               <form action="/books/map/group/{{ g['id'] }}/edit" method="post" class="edit-row">
                 <input type="text" name="name" value="{{ g['name'] }}" aria-label="{{ _('Arc name') }}" class="grow">
                 <input type="text" name="name_fr" value="{{ g['name_fr'] or '' }}" placeholder="{{ _('French name') }}" aria-label="{{ _('French name') }}" class="grow">
@@ -81,6 +81,7 @@
               </div>
             {% endif %}
             {% if not grp.entries %}<p class="meta">{{ _("No books yet. Use “Move to” on a book below.") }}</p>{% endif %}
+            {% if sx['kind'] == 'lanes' and loop.first %}<p class="meta">{{ _("In lanes, the reading order is the series order: drag books in the Order view to move them up or down. Here you pick each book's lane and label.") }}</p>{% endif %}
             <ol class="edit-entries">
               {% for en in grp.entries %}
                 <li id="ent{{ en.id }}">
@@ -95,8 +96,10 @@
                     {% endif %}
                     <button type="submit" class="btn-small">{{ _("Save") }}</button>
                   </form>
+                  {% if sx['kind'] != 'lanes' %}
                   <form action="/books/map/entry/{{ en.id }}/move" method="post"><input type="hidden" name="direction" value="up"><button type="submit" class="btn-small" aria-label="{{ _('Move up') }}"{% if loop.first %} disabled{% endif %}>&uarr;</button></form>
                   <form action="/books/map/entry/{{ en.id }}/move" method="post"><input type="hidden" name="direction" value="down"><button type="submit" class="btn-small" aria-label="{{ _('Move down') }}"{% if loop.last %} disabled{% endif %}>&darr;</button></form>
+                  {% endif %}
                   {{ place_select(en.book_id, g['id'], all_groups) }}
                 </li>
               {% endfor %}
@@ -136,7 +139,7 @@
     <ul class="edit-links">
       {% for l in links %}
         <li>
-          <span>{{ l.from }} &rarr; {{ l.to }} <span class="meta">({{ _(link_kinds.get(l.kind, l.kind)) }})</span></span>
+          <span>{{ l.from }} &rarr; {{ l.to }} <span class="meta">({{ _(link_kinds.get(l.kind) or lane_link_kinds.get(l.kind, l.kind)) }})</span></span>
           <form action="/books/series/{{ s['id'] }}/map/link/{{ l.id }}/delete" method="post"><button type="submit" class="btn-small btn-danger">{{ _("Remove") }}</button></form>
         </li>
       {% endfor %}
@@ -145,7 +148,8 @@
       <select name="from_id" aria-label="{{ _('From') }}">{% for b in data.books %}<option value="{{ b['id'] }}">{{ b['title'] }}</option>{% endfor %}</select>
       <span class="meta">&rarr;</span>
       <select name="to_id" aria-label="{{ _('To') }}">{% for b in data.books %}<option value="{{ b['id'] }}">{{ b['title'] }}</option>{% endfor %}</select>
-      <select name="kind" aria-label="{{ _('Line type') }}">{% for k, label in link_kinds.items() %}<option value="{{ k }}">{{ _(label) }}</option>{% endfor %}</select>
+      <select name="kind" aria-label="{{ _('Line type') }}">{% for k, label in link_kinds.items() %}<option value="{{ k }}">{{ _(label) }}</option>{% endfor %}
+        {% if data.sections | selectattr('s.kind', 'equalto', 'lanes') | list %}{% for k, label in lane_link_kinds.items() %}<option value="{{ k }}">{{ _("Lanes:") }} {{ _(label) }}</option>{% endfor %}{% endif %}</select>
       <button type="submit" class="btn-small btn-accent">{{ _("Add line") }}</button>
     </form>
   </section>

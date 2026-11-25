@@ -18,11 +18,15 @@ import books_db
 # --- helpers ---------------------------------------------------------------------------------------
 
 
-def e(title, sub="", lines="", stories=(), o=None, aliases=(), part_of=None, author=""):
+def e(title, sub="", lines="", stories=(), o=None, aliases=(), part_of=None, author="", lane="", style="",
+      note="", note_fr="", sub_fr=""):
     """One map entry. `lines` is a space-separated list of line codes, `o` the narrative list order,
-    `part_of` the title of the entry this one shares a cover with (split anthologies)."""
+    `part_of` the title of the entry this one shares a cover with (split anthologies). Lanes sections
+    also use `lane` (lane id), `style` (prequel / companion: dashed card) and `note` (shown with a "?"
+    when the placement is uncertain)."""
     return {"title": title, "sub": sub, "lines": lines.split(), "stories": list(stories), "o": o,
-            "aliases": list(aliases), "part_of": part_of, "author": author}
+            "aliases": list(aliases), "part_of": part_of, "author": author, "lane": lane, "style": style,
+            "note": note, "note_fr": note_fr, "sub_fr": sub_fr}
 
 
 def _num(n, extra=""):
@@ -37,6 +41,8 @@ _SUB_FR = [
     ("up to Kryptos", "jusqu'à Kryptos"), ("Wolf's Claw onwards", "à partir de Wolf's Claw"),
     ("up to Shield of Lies", "jusqu'à Shield of Lies"), ("Garro part 3", "Garro, partie 3"),
     (" · part", " · partie"),
+    ("Prequel · read here", "Préquelle · à lire ici"), ("Prequel", "Préquelle"), ("Companion", "Compagnon"),
+    ("Standalone", "Indépendant"), ("Book ", "Tome "), ("finale", "final"),
     ("Primarchs anthology", "Anthologie des Primarques"), ("Primarchs #", "Primarques #"),
     ("Characters #", "Personnages #"), ("Unification Wars prequel", "préquelle, guerres d'Unification"),
     ("best after", "de préférence après"), ("eve of the Siege", "à la veille du Siège"),
@@ -312,7 +318,109 @@ DISCWORLD = {
     "links": [["Carpe Jugulum", "The Wee Free Men", "cross"]],
 }
 
-PRESETS = {p["key"]: p for p in (HORUS_HERESY, DISCWORLD)}
+
+# --- Arisen + Raiders + Operators (lanes) --------------------------------------------------------------
+# Michael Stephen Fuchs's own page says there's no strict chronology and recommends publication order;
+# this chart instead lays the books out by when they happen, the way a re-read would go: Raiders (the
+# JFK's first two years) and Operators (USOC's first two years, "from Hereford") run beside the main
+# series before Fortress Britain, which they both lead into. Placements marked with a note are best
+# guesses to confirm.
+
+_MSF = "Michael Stephen Fuchs"
+
+
+def _ar(title, lane, sub, **kw):
+    return e(title, sub, author=_MSF, lane=lane, **kw)
+
+
+ARISEN = {
+    "key": "arisen",
+    "name": "Arisen + Raiders + Operators",
+    "name_fr": "Arisen + Raiders + Operators",
+    "description": ("Lane chart: the main series in the middle, Raiders (the JFK) and Operators (Hereford) beside it "
+                    "in story order, with the prequels where they're best read. 30 titles."),
+    "description_fr": ("Carte en couloirs : la série principale au centre, Raiders (le JFK) et Operators (Hereford) à "
+                       "côté dans l'ordre de l'histoire, les préquelles là où elles se lisent le mieux. 30 titres."),
+    "match_series": ["arisen"],
+    "author": _MSF,
+    "col": 150,
+    "lines": {},
+    "sections": [
+        {"kind": "lanes", "name": "Arisen", "name_fr": "Arisen",
+         "lanes": [
+             {"id": "raiders", "name": "Arisen: Raiders", "color": "#d4934a",
+              "about": "The USS John F. Kennedy and its Marine Raiders, from the Collapse until they reach Britain.",
+              "about_fr": "Le USS John F. Kennedy et ses Marine Raiders, de l'effondrement à leur arrivée en Grande-Bretagne."},
+             {"id": "main", "name": "Arisen", "color": "#7fb6d8",
+              "about": "Alpha team and Fortress Britain. Prequels sit where they're best read.",
+              "about_fr": "L'équipe Alpha et la Forteresse Britannique. Les préquelles sont placées là où elles se lisent le mieux."},
+             {"id": "operators", "name": "Arisen: Operators", "color": "#9a9ccf",
+              "about": "USOC's own first two years of the Zulu Alpha, from Hereford.",
+              "about_fr": "Les deux premières années du Zulu Alpha vues par l'USOC, depuis Hereford."},
+         ],
+         "eras": [
+             {"from": "Genesis", "name": "Day 0", "sub": "The outbreak", "name_fr": "Jour 0", "sub_fr": "L'épidémie"},
+             {"from": "The Collapse", "name": "Years 1–2", "sub": "The Zulu Alpha, before the JFK reaches Britain",
+              "name_fr": "Années 1–2", "sub_fr": "Le Zulu Alpha, avant l'arrivée du JFK en Grande-Bretagne"},
+             {"from": "Fortress Britain", "name": "Main series", "sub": "The JFK picks up Alpha team",
+              "name_fr": "Série principale", "sub_fr": "Le JFK récupère l'équipe Alpha"},
+             {"from": "Last Stand", "name": "The end", "sub": "Everything converges",
+              "name_fr": "La fin", "sub_fr": "Tout converge"},
+             {"from": "Fickisms", "name": "Companions", "sub": "Any time after Endgame",
+              "name_fr": "Compagnons", "sub_fr": "À tout moment après Endgame"},
+         ],
+         "books": [
+             _ar("Genesis", "main", "Prequel", style="prequel", aliases=["Arisen: Genesis", "Arisen : Genesis"]),
+             _ar("The Collapse", "raiders", "Raiders #1"),
+             _ar("The Fall of the Third Temple", "operators", "Operators #1"),
+             _ar("Tribes", "raiders", "Raiders #2"),
+             _ar("Pipe Hitters", "operators", "Operators #2", aliases=["Arisen: Operators, Volume II- Pipe Hitters"]),
+             _ar("Dead Men Walking", "raiders", "Raiders #3"),
+             _ar("Brothers", "operators", "Operators #3"),
+             _ar("Duty", "raiders", "Raiders #4"),
+             _ar("Stronghold", "operators", "Operators #4",
+                 note="The author says Operators covers USOC's first two years; volumes IV and V might reach into the main series.",
+                 note_fr="L'auteur dit qu'Operators couvre les deux premières années de l'USOC ; les tomes IV et V débordent peut-être sur la série principale."),
+             _ar("The Last Alamo", "operators", "Operators #5",
+                 note="Not out yet (pre-order). Placed as the end of the Operators arc, just before Book 1.",
+                 note_fr="Pas encore sorti (précommande). Placé en fin d'arc Operators, juste avant le tome 1."),
+             _ar("Fortress Britain", "main", "Book 1"),
+             _ar("Mogadishu of the Dead", "main", "Book 2"),
+             _ar("Three Parts Dead", "main", "Book 3"),
+             _ar("Odyssey", "main", "Prequel · read here", style="prequel",
+                 note="Placed after Book 3 as in your list. The author: it 'clears up a huge mystery of the main series'.",
+                 note_fr="Placé après le tome 3 comme dans votre liste. L'auteur : il « éclaircit un grand mystère de la série principale »."),
+             _ar("Maximum Violence", "main", "Book 4"),
+             _ar("Exodus", "main", "Book 5"),
+             _ar("The Horizon", "main", "Book 6"),
+             _ar("Death of Empires", "main", "Book 7"),
+             _ar("Empire of the Dead", "main", "Book 8"),
+             _ar("Nemesis", "main", "Prequel · read here", style="prequel"),
+             _ar("Cataclysm", "main", "Book 9"),
+             _ar("The Flood", "main", "Book 10"),
+             _ar("Deathmatch", "main", "Book 11"),
+             _ar("Carnage", "main", "Book 12"),
+             _ar("The Siege", "main", "Book 13"),
+             _ar("Last Stand", "raiders", "Standalone", style="prequel",
+                 note="The author: it 'adds backstory to the climax of the Raiders prequel series', so it sits just before The Last Raid.",
+                 note_fr="L'auteur : il « ajoute du contexte au final de la série préquelle Raiders », d'où sa place juste avant The Last Raid."),
+             _ar("The Last Raid", "raiders", "Raiders #5",
+                 note="Placed alongside Endgame as you described. The author's blurb calls Raiders the two years before Book 1: check once read.",
+                 note_fr="Placé à côté d'Endgame comme vous l'avez décrit. Le résumé de l'auteur situe Raiders dans les deux ans avant le tome 1 : à vérifier à la lecture."),
+             _ar("Endgame", "main", "Book 14 · finale"),
+             _ar("Fickisms", "main", "Companion", style="companion",
+                 aliases=["Fickisms: The Complete Wit & Wisdom of Master Gunnery Sergeant Fick"]),
+             _ar("Fickisms II: This Time It's Personal", "main", "Companion", style="companion"),
+         ]},
+    ],
+    "links": [
+        ["Genesis", "The Collapse", "fork"], ["Genesis", "The Fall of the Third Temple", "fork"],
+        ["Duty", "Fortress Britain", "join"], ["The Last Alamo", "Fortress Britain", "join"],
+        ["The Last Raid", "Endgame", "with"],
+    ],
+}
+
+PRESETS = {p["key"]: p for p in (HORUS_HERESY, DISCWORLD, ARISEN)}
 
 
 def preset_size(p) -> int:
@@ -330,6 +438,8 @@ def _section_groups(sec) -> list[dict]:
 
 
 def _section_entries(sec) -> list[dict]:
+    if sec["kind"] == "lanes":
+        return list(sec["books"])
     out = []
     for g in _section_groups(sec):
         for r in g.get("rows") or [{"books": g["books"]}]:
@@ -386,9 +496,42 @@ def apply_preset(key: str, series_id: int | None, mark_unread: bool = True) -> t
                 stats["merged"] += 1
         return best
 
+    def take(ent) -> int:
+        """The book for a preset entry: the library's copy (moved into the series) or a new manual book."""
+        found = find(ent)
+        if found:
+            used.add(found["id"])
+            stats["matched"] += 1
+            if found["series_id"] != series_id:
+                books_db.set_book_series_raw(found["id"], series_id)
+                stats["moved"] += 1
+            return found["id"]
+        author = ent["author"] or p.get("author", "")
+        book_id = books_db.add_book({"title": ent["title"], "author": author}, series_id, "", "want")
+        stats["created"] += 1
+        # Only books with an author can auto-link later (bare titles are too ambiguous), and split
+        # parts share their first part's record instead.
+        if author and not ent["part_of"]:
+            books_db.queue_lookup(book_id)
+        return book_id
+
     section_ids: list[int] = []
     order = 0
     for sec in p["sections"]:
+        if sec["kind"] == "lanes":
+            lane_ix = {ln["id"]: k for k, ln in enumerate(sec["lanes"])}
+            entries = []
+            for ent in sec["books"]:
+                book_id = take(ent)
+                by_title[ent["title"]] = book_id
+                entries.append({"book_id": book_id, "lane": lane_ix[ent["lane"]], "sub": ent["sub"],
+                                "sub_fr": ent["sub_fr"] or sub_fr(ent["sub"]), "note": ent["note"],
+                                "note_fr": ent["note_fr"], "style": ent["style"]})
+            eras = [{**era, "from": by_title[era["from"]]} for era in sec.get("eras", [])]
+            section_ids.append(books_db.build_lanes_section(
+                series_id, sec["name"], sec["lanes"], entries, [], eras, name_fr=sec.get("name_fr") or "",
+                hint=sec.get("hint") or "", hint_fr=sec.get("hint_fr") or ""))
+            continue
         sid = books_db.create_section(series_id, sec["kind"], sec["name"], sec.get("color") or "#8f99a8",
                                       sec.get("hint") or "", auto_wire=False,
                                       name_fr=sec.get("name_fr") or "", hint_fr=sec.get("hint_fr") or "")
@@ -401,22 +544,7 @@ def apply_preset(key: str, series_id: int | None, mark_unread: bool = True) -> t
                 if row.get("seq") is False:
                     books_db.set_row_noseq(gid, r_i)
                 for k, ent in enumerate(row["books"]):
-                    found = find(ent)
-                    if found:
-                        used.add(found["id"])
-                        book_id = found["id"]
-                        stats["matched"] += 1
-                        if found["series_id"] != series_id:
-                            books_db.set_book_series_raw(book_id, series_id)
-                            stats["moved"] += 1
-                    else:
-                        author = ent["author"] or p.get("author", "")
-                        book_id = books_db.add_book({"title": ent["title"], "author": author}, series_id, "", "want")
-                        stats["created"] += 1
-                        # Only books with an author can auto-link later (bare titles are too ambiguous),
-                        # and split parts share their first part's record instead.
-                        if author and not ent["part_of"]:
-                            books_db.queue_lookup(book_id)
+                    book_id = take(ent)
                     if ent["part_of"]:
                         part_links.append((book_id, ent["part_of"]))
                     by_title[ent["title"]] = book_id

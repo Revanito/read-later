@@ -487,6 +487,19 @@ FR = {
     "Use your Account page to change your own password.": "Changez votre propre mot de passe depuis la page Compte.",
     "That profile can't be deleted.": "Ce profil ne peut pas être supprimé.",
     "Profile {name} and its library deleted.": "Profil {name} et sa bibliothèque supprimés.",
+    # --- lanes (lane charts) -------------------------------------------------------------------------
+    "Lanes (spin-offs beside the main series)": "Couloirs (séries dérivées à côté de la série principale)",
+    "Branches off into": "Se ramifie vers",
+    "Leads into": "Mène à",
+    "Runs alongside": "Se déroule en parallèle de",
+    "Lanes:": "Couloirs :",
+    "New lane name": "Nom du nouveau couloir",
+    "+ Lane": "+ Couloir",
+    "In lanes, the reading order is the series order: drag books in the Order view to move them up or down. Here you pick each book's lane and label.":
+        "Dans les couloirs, l'ordre de lecture est celui de la série : faites glisser les livres dans la vue Ordre pour les monter ou les descendre. Ici, vous choisissez le couloir et l'étiquette de chaque livre.",
+    "Build a lane chart: the main series in the middle, spin-offs beside it where their stories meet":
+        "Créer une carte en couloirs : la série principale au centre, les séries dérivées à côté, là où leurs histoires se croisent",
+    "Placement to confirm": "Placement à confirmer",
 }
 
 # English words whose plural is spelled like the singular ("1 series" / "2 series") but French isn't.
@@ -502,5 +515,5 @@ JS_KEYS = [
     "Any order, any time", "reading order", "Couldn't save that change. Check the connection and try again.",
     "{n} title", "{n} titles",
     "a new series", "WARNING: that series doesn't look like this preset.",
-    "Apply this preset to {target}? Any reading map it already has is replaced.",
+    "Apply this preset to {target}? Any reading map it already has is replaced.", "Placement to confirm",
 ]

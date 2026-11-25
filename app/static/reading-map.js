@@ -14,7 +14,9 @@
   const T = (s) => TEXT[s] || s;
   const FR = window.RL_LANG === "fr";
   const TP = (one, other, n) => T(FR ? (n <= 1 ? one : other) : (n === 1 ? one : other)).replace("{n}", n);
-  const PRED_KINDS = new Set(["seq", "rowseq", "elbow", "vdash", "branch", "logic"]);
+  // "fork" (a spin-off lane starting from a book) gates Up next; "join" and "with" (lanes sections) don't:
+  // a lane ending in Fortress Britain shouldn't hold Fortress Britain back.
+  const PRED_KINDS = new Set(["seq", "rowseq", "elbow", "vdash", "branch", "logic", "fork"]);
   const DONE = new Set(["read", "skip"]);
   let view = "map";
 
@@ -86,10 +88,50 @@
     return `<section class="${cls}" style="--arc:${g.color}">${headHtml(layout === "col" ? g.name : s.name, hint, ids)}<ol>${ids.map((i) => nodeHtml(i, g.color)).join("")}</ol></section>`;
   }
 
+  // Lanes: the main series and its spin-offs side by side, one grid row per book in reading order
+  // (= the series order, so dragging in the Order view moves books here), eras down the left.
+  const laneIds = (s) => s.groups.flatMap((g) => g.rows.flatMap((r) => r.ids)).sort((a, b) => node(a).o - node(b).o);
+  function laneNodeHtml(id, color, row, col) {
+    const n = node(id);
+    const badge = n.status === "reading" ? `<span class="badge reading">${esc(T("Reading"))}</span>` : upNext(id) ? `<span class="badge">${esc(T("Up next"))}</span>` : "";
+    const tip = [n.title, n.title_orig && n.title_orig !== n.title ? T("Original title: {title}").replace("{title}", n.title_orig) : "",
+      n.sub, LABEL[n.status], n.note].filter(Boolean).join("\n");
+    return `<button type="button" class="node lnode st-${n.status}${n.style ? " " + esc(n.style) : ""}" data-id="${id}" ` +
+      `style="grid-row:${row};grid-column:${col};--arc:${color}" title="${esc(tip)}">${badge}<span class="num">${n.o}</span>` +
+      (n.cover ? `<img src="${esc(n.cover)}" alt="" loading="lazy">` : `<span class="nocover" aria-hidden="true"></span>`) +
+      `<span class="lt"><span class="t">${esc(n.title)}</span><span class="s"><span>${esc(n.sub)}</span>` +
+      (n.note ? `<span class="flag" aria-label="${esc(T("Placement to confirm"))}">?</span>` : "") +
+      `<a class="open" href="/books/book/${id}" title="${esc(T("Open book page"))}" aria-label="${esc(T("Open {title}").replace("{title}", n.title))}">&#8599;</a></span></span></button>`;
+  }
+  function lanesHtml(s, si) {
+    const lanes = s.groups.filter((g) => g.rows.some((r) => r.ids.length));
+    const ids = laneIds(s);
+    const col = {};
+    lanes.forEach((g, k) => g.rows.forEach((r) => r.ids.forEach((id) => (col[id] = k + 2))));
+    let h = `<div class="lanes" data-s="${si}" style="grid-template-columns: var(--rail) repeat(${lanes.length}, minmax(var(--lane), 1fr)); ` +
+      `grid-template-rows: auto repeat(${ids.length}, minmax(var(--lrow), auto))">`;
+    h += `<div class="lane-head rail" aria-hidden="true"></div>` + lanes.map((g, k) => {
+      const mine = g.rows.flatMap((r) => r.ids);
+      const done = mine.filter((i) => node(i).status === "read").length;
+      return `<div class="lane-head" style="grid-column:${k + 2};--arc:${g.color}"><h3>${esc(g.name)}</h3>` +
+        (g.hint ? `<p>${esc(g.hint)}</p>` : "") + `<div class="sub">${done}/${mine.length}</div></div>`;
+    }).join("");
+    const eras = (s.eras || []).filter((e) => node(e.from)).sort((a, b) => node(a.from).o - node(b.from).o);
+    eras.forEach((e, k) => {
+      const from = node(e.from).o + 1, to = k + 1 < eras.length ? node(eras[k + 1].from).o + 1 : ids.length + 2;
+      h += `<div class="lane-era" style="grid-row:${from} / ${to}"><div class="era-label"><strong>${esc(e.name)}</strong>` +
+        (e.sub ? `<span>${esc(e.sub)}</span>` : "") + `</div></div>`;
+    });
+    h += ids.map((id) => laneNodeHtml(id, groupOf[id].color, node(id).o + 1, col[id])).join("");
+    return h + "</div>";
+  }
+
   function renderMap() {
     let html = '<svg class="wires" id="wires" aria-hidden="true"></svg>';
     M.sections.forEach((s, i) => {
-      if (s.kind === "cols") {
+      if (s.kind === "lanes") {
+        if (laneIds(s).length) html += lanesHtml(s, i);
+      } else if (s.kind === "cols") {
         const gs = s.groups.filter((g) => g.rows.some((r) => r.ids.length));
         html += `<div class="cols" data-s="${i}" style="grid-template-columns: repeat(${gs.length}, minmax(var(--col), 1fr))">${gs.map((g) => groupHtml(s, g, "col")).join("")}</div>`;
       } else if (!s.groups[0].rows.some((r) => r.ids.length)) {
@@ -141,7 +183,22 @@
         } else {
           const b = box(e.to);
           if (!b) return;
-          if (e.kind === "seq" || e.kind === "vdash") d = `M${a.cx},${a.b} V${b.t - 2}`;
+          const inLanes = M.sections[sectionOf[e.from]].kind === "lanes";
+          if (e.kind === "seq" && inLanes) {
+            d = `M${a.cx},${a.b} V${b.t - 2}`;
+            if (node(e.to).o - node(e.from).o > 4) e.quiet = true;  // the lane goes quiet for a while: dotted
+          } else if (e.kind === "fork") {  // out of the source's side, curving down into the new lane
+            const right = b.cx > a.cx, x0 = right ? a.r : a.l;
+            d = `M${x0},${a.cy} C${b.cx},${a.cy} ${b.cx},${a.cy} ${b.cx},${b.t - 2}`;
+            color = colorOf(e.to);
+          } else if (e.kind === "join") {  // a lane ends by feeding into a book of another lane
+            const right = b.cx > a.cx, x1 = right ? b.l - 2 : b.r + 2;
+            d = `M${a.cx},${a.b} C${a.cx},${b.cy} ${a.cx},${b.cy} ${x1},${b.cy}`;
+          } else if (e.kind === "with") {  // runs alongside: dashed, side to side
+            const right = b.cx > a.cx, x0 = right ? a.r : a.l, x1 = right ? b.l : b.r, xm = (x0 + x1) / 2;
+            d = `M${x0},${a.cy} C${xm},${a.cy} ${xm},${b.cy} ${x1},${b.cy}`;
+            e.noArrow = true;
+          } else if (e.kind === "seq" || e.kind === "vdash") d = `M${a.cx},${a.b} V${b.t - 2}`;
           else if (e.kind === "rowseq") d = `M${a.r},${a.cy} H${b.l - 2}`;
           else if (e.kind === "elbow") { const y = (a.b + b.t) / 2; d = `M${a.cx},${a.b} V${y} H${b.cx} V${b.t - 2}`; }
           else if (e.kind === "branch") {
@@ -157,9 +214,10 @@
       }
       const stroke = travelled ? color : "var(--wire)";
       const mk = "m" + (used.has(stroke) ? used.get(stroke) : used.set(stroke, used.size).get(stroke));
-      const dash = e.kind === "cross" || e.kind === "vdash" ? ' stroke-dasharray="5 5"' : "";
+      const dash = e.kind === "cross" || e.kind === "vdash" || e.kind === "with" ? ' stroke-dasharray="5 5"' : e.quiet ? ' stroke-dasharray="2 6"' : "";
       const w = e.kind === "seq" || e.kind === "rowseq" ? 2 : 1.5;
-      paths += `<path d="${d}" fill="none" stroke="${stroke}" stroke-width="${w}"${dash} stroke-linejoin="round" marker-end="url(#ar-${mk})"/>`;
+      paths += `<path d="${d}" fill="none" stroke="${stroke}" stroke-width="${w}"${dash} stroke-linejoin="round" stroke-linecap="round"` +
+        (e.noArrow ? "" : ` marker-end="url(#ar-${mk})"`) + `/>`;
     });
     let defs = "<defs>";
     used.forEach((i, stroke) => {
@@ -174,7 +232,9 @@
     M.sections.forEach((s) => {
       const ids = s.groups.flatMap((g) => g.rows.flatMap((r) => r.ids));
       if (!ids.length) return;
-      if (s.kind === "cols" && ids.some((i) => node(i).o != null)) {
+      if (s.kind === "lanes") {
+        blocks.push({ name: s.name + " · " + T("reading order"), ids: laneIds(s), color: s.color, numbered: true, big: true, lanes: true });
+      } else if (s.kind === "cols" && ids.some((i) => node(i).o != null)) {
         const sorted = [...ids].sort((a, b) => (node(a).o ?? 1e9) - (node(b).o ?? 1e9));
         blocks.push({ name: s.name + " · " + T("reading order"), ids: sorted, color: s.color, numbered: true, big: true });
       } else if (s.kind === "cols") {
@@ -198,7 +258,7 @@
         const next = upNext(id);
         const st = n.status === "reading" ? T("Reading") : next ? T("Up next") : LABEL[n.status];
         const label = blk.numbered ? `${k + 1}.` : n.sub;
-        const small = [blk.numbered ? n.sub : "", n.stories.join(", ")].filter(Boolean).join(" · ");
+        const small = [blk.lanes ? groupOf[id].name : "", blk.numbered ? n.sub : "", n.stories.join(", "), blk.lanes ? n.note : ""].filter(Boolean).join(" · ");
         return `<li><button type="button" class="li-btn st-${n.status}${next ? " next" : ""}" data-id="${id}"><span class="n">${esc(label)}</span>` +
           `<span class="tt">${esc(n.title)}${dots(n.lines)}${small ? `<small>${esc(small)}</small>` : ""}</span><span class="st">${st}</span></button></li>`;
       }).join("");

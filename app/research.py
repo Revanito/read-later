@@ -36,11 +36,36 @@ books the reader doesn't have yet. When spin-offs interleave with the main serie
 If sources disagree (publication vs chronological order), use the order the author recommends, or
 else the one most recommended for a first read, and explain the alternative in "caveats".
 Leave out: comics, art books, game guides, translations, omnibus/box-set editions of books already listed.
+Work like a careful researcher: read the book descriptions and reviews to see WHEN each story happens,
+and trust what the author says over aggregator sites. Where the sources don't pin a book down, still
+place it at your best estimate and say why in that book's "uncertain" field: a reasoned guess the reader
+can adjust beats leaving the book out of place.
+
+LANES. Decide whether the universe has spin-off series whose stories run IN PARALLEL with the main
+series (the same years seen by other characters, e.g. a prequel series covering the two years before
+book 1, or a side series happening during books 4-8). If any spin-off overlaps the main series in story
+time, set "layout": "lanes" even when the exact overlap is uncertain, and describe a lane chart: the
+main series in the "center" lane, each parallel spin-off in its own lane ("left" or "right"), and the
+books ordered by WHEN THEIR STORY HAPPENS (not publication), so a reader moving down the list switches
+lanes where the stories meet. Use rough placements when that's all the sources support (e.g. "during the
+two years before book 1"), flag them in "uncertain", and mention the author's own recommended order in
+"caveats" if it differs. Use "layout": "sequence" (and leave out "lanes", "eras" and the lane fields)
+only when no spin-off overlaps the main story: one series, or spin-offs that simply follow each other.
 
 Answer with ONLY a JSON object, no prose before or after:
-{{"order": [{{"title": "exact published title", "author": "...", "line": "main series or spin-off name",
+{{"layout": "sequence|lanes",
+ "order": [{{"title": "exact published title", "author": "...", "line": "main series or spin-off name",
   "number": "number within its line, e.g. 3, 4.5, Prequel", "year": 2015,
-  "kind": "novel|novella|short|collection|companion", "note": "why it goes here, one short sentence"}}],
+  "kind": "novel|novella|short|collection|companion", "note": "why it goes here, one short sentence",
+  "style": "prequel|companion (lanes only: read out of publication order; omit otherwise)",
+  "forks_from": "lanes only: title of the book this spin-off's FIRST book branches off from",
+  "joins": "lanes only: title of the book in another lane that this book's story leads straight into",
+  "alongside": "lanes only: title of a book in another lane that happens at the same time",
+  "uncertain": "only when this placement is a guess: why"}}],
+ "lanes": [{{"name": "a line exactly as used in order[].line", "side": "left|center|right",
+   "about": "one sentence: whose story and when"}}],
+ "eras": [{{"name": "short label, e.g. Day 0, Years 1-2, Main series", "sub": "one line",
+   "from": "title of the first book of that era"}}],
  "basis": "author|publisher|publication|chronological|fans",
  "sources": ["url", ...], "confidence": "high|medium|low",
  "caveats": "anything uncertain: unreleased books, disputed placements, books you could not verify"}}
@@ -79,6 +104,7 @@ def state(series_id: int) -> dict | None:
     out["result"] = result
     out["items"] = match_items(series_id, result.get("order") or [])
     out["lines"], out["interleaved"] = line_layout(out["items"])
+    out["lanes"] = lane_plan(result, out["items"])
     return out
 
 
@@ -149,7 +175,22 @@ def start(series_id: int) -> bool:
     return True
 
 
-def apply(series_id: int, add: set[int], reorder: bool, build_map: bool) -> dict:
+def lane_plan(result: dict, items: list[dict]) -> list[dict]:
+    """The lanes of a "lanes" result, left to right (main series in the middle), or [] when the result
+    isn't a usable lane chart (fewer than two lanes, or most books on lines it doesn't describe)."""
+    if result.get("layout") != "lanes" or not isinstance(result.get("lanes"), list):
+        return []
+    lanes = [ln for ln in result["lanes"] if isinstance(ln, dict) and str(ln.get("name") or "").strip()]
+    order = {"left": 0, "center": 1, "right": 2}
+    lanes.sort(key=lambda ln: order.get(str(ln.get("side") or "center").lower(), 1))
+    names = {str(ln["name"]).strip().lower() for ln in lanes}
+    known = sum(1 for it in items if str(it.get("line") or "").strip().lower() in names)
+    if len(lanes) < 2 or known < len(items) / 2:
+        return []
+    return lanes
+
+
+def apply(series_id: int, add: set[int], reorder: bool, build_map: bool, build_lanes: bool = False) -> dict:
     """Apply a stored research result. `add` = indexes of missing/elsewhere items to bring in."""
     st = state(series_id)
     if not st or st["status"] != "done":
@@ -179,7 +220,10 @@ def apply(series_id: int, add: set[int], reorder: bool, build_map: bool) -> dict
         with books_db.get_conn() as conn:
             books_db._renumber(conn, ids + rest)
         stats["ordered"] = True
-    if build_map:
+    if build_lanes and st["lanes"]:
+        _build_lanes(series_id, s, st, placed)
+        stats["mapped"] = stats["ordered"] = True
+    elif build_map:
         _, interleaved = line_layout([it for it, _ in placed])
         lines: dict[str, list[tuple[int, str]]] = {}
         for it, bid in placed:
@@ -195,6 +239,55 @@ def apply(series_id: int, add: set[int], reorder: bool, build_map: bool) -> dict
         books_db.build_line_map(series_id, list(lines.items()))
         stats["mapped"] = True
     return stats
+
+
+_LANE_COLORS = {"center": "#7fb6d8", "left": "#d4934a", "right": "#9a9ccf"}
+_EXTRA_COLORS = ["#5ec2a3", "#d77fd2", "#d9c04a", "#d07a7a", "#8fb26f"]
+
+
+def _build_lanes(series_id: int, s, st: dict, placed: list[tuple[dict, int]]) -> None:
+    lanes = st["lanes"]
+    ix = {str(ln["name"]).strip().lower(): k for k, ln in enumerate(lanes)}
+    center = next((k for k, ln in enumerate(lanes) if str(ln.get("side")).lower() == "center"), len(lanes) // 2)
+    used_colors: set[str] = set()
+    lane_rows = []
+    for k, ln in enumerate(lanes):
+        side = str(ln.get("side") or "").lower()
+        color = _LANE_COLORS.get(side) if side in _LANE_COLORS and _LANE_COLORS[side] not in used_colors else None
+        color = color or next(c for c in _EXTRA_COLORS + list(_LANE_COLORS.values()) if c not in used_colors)
+        used_colors.add(color)
+        lane_rows.append({"name": str(ln["name"]).strip(), "color": color, "about": str(ln.get("about") or "")})
+
+    def find(title) -> int | None:
+        title = str(title or "").strip()
+        if not title:
+            return None
+        for rule in (books_db.loose_title_match, books_db.head_title_match):
+            for it, bid in placed:
+                if rule(it["title"], title):
+                    return bid
+        return None
+
+    entries, links = [], []
+    for it, bid in placed:
+        num = str(it.get("number") or "").strip()
+        sub = f"#{num}" if num[:1].isdigit() else num
+        line = str(it.get("line") or "").strip()
+        if line and line.lower() != str(lanes[center]["name"]).strip().lower() and sub.startswith("#"):
+            sub = f"{line.split(':')[-1].strip()} {sub}"  # "Raiders #1" rather than a bare "#1" beside "Book 1"
+        style = str(it.get("style") or "").lower()
+        entries.append({"book_id": bid, "lane": ix.get(line.lower(), center), "sub": sub,
+                        "note": str(it.get("uncertain") or "").strip(),
+                        "style": style if style in ("prequel", "companion") else ""})
+        for field, kind, outgoing in (("forks_from", "fork", False), ("joins", "join", True), ("alongside", "with", True)):
+            other = find(it.get(field))
+            if other is not None and other != bid:
+                links.append((bid, other, kind) if outgoing else (other, bid, kind))
+    eras = []
+    for era in st["result"].get("eras") or []:
+        if isinstance(era, dict) and (first := find(era.get("from"))) is not None:
+            eras.append({"name": str(era.get("name") or ""), "sub": str(era.get("sub") or ""), "from": first})
+    books_db.build_lane_map(series_id, s["name"], lane_rows, entries, list(dict.fromkeys(links)), eras)
 
 
 def _line(it: dict, default: str) -> str:
