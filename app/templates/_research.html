@@ -77,12 +77,8 @@
           {{ _("Build a lane chart: the main series in the middle, spin-offs beside it where their stories meet") }}
           ({{ rs['lanes'] | map(attribute='name') | join(', ') }}){% if map %} · <span class="warn">{{ _("replaces the current map") }}</span>{% endif %}</label>
         {% else %}
-        <label><input type="checkbox" name="build_map" value="1"{% if lines | length > 1 and not rs['interleaved'] and not map %} checked{% endif %}>
-          {% if rs['interleaved'] %}
-            {{ _("Build a reading map in this order, each book labelled with its line") }}{% if lines | length > 1 %} ({{ lines | join(', ') }}){% endif %}
-          {% else %}
-            {{ _("Build a reading map with one section per line") }}{% if lines | length > 1 %} ({{ lines | join(', ') }}){% endif %}
-          {% endif %}
+        <label><input type="checkbox" name="build_map" value="1"{% if lines | length > 1 and not map %} checked{% endif %}>
+          {{ _("Build a lane chart in this order, one lane per line") }}{% if lines | length > 1 %} ({{ lines | join(', ') }}){% endif %}
           {% if map %} · <span class="warn">{{ _("replaces the current map") }}</span>{% endif %}</label>
         {% endif %}
         <p class="meta">{{ _("Ticked missing books are added as manual books and link themselves to Hardcover later. Nothing changes until you apply.") }}</p>

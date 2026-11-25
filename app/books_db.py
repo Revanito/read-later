@@ -672,18 +672,37 @@ def build_lane_map(series_id: int, name: str, lanes: list[dict], entries: list[d
 _LINE_COLORS = ["#7fb6d8", "#d4934a", "#9a9ccf", "#5ec2a3", "#d77fd2", "#d9c04a", "#d07a7a", "#8fb26f"]
 
 
-def build_line_map(series_id: int, lines: list[tuple[str, list[tuple[int, str]]]]) -> None:
-    """Replace the series' map with one single-column section per line (main series, then each
-    spin-off), chained one after the other. lines = [(name, [(book_id, label), ...]), ...]"""
-    clear_map(series_id)
-    set_map_meta(series_id, None, 150)
-    for k, (name, entries) in enumerate(lines):
-        color = _LINE_COLORS[k % len(_LINE_COLORS)]
-        sid = create_section(series_id, "solo", name, color, auto_wire=True)
-        gid = create_group(sid, name, color)
-        for bid, sub in entries:
-            add_entry(gid, bid, sub=sub)
-    renumber_from_map(series_id)
+def build_line_map(series_id: int, name: str, rows: list[tuple[str, int, str]]) -> None:
+    """Replace the series' map with a lane chart built from plain lines (main series + spin-offs),
+    rows = [(line, book_id, label), ...] in reading order. The line with the most books is the main
+    lane in the middle; the others alternate right/left in order of first appearance. When lines
+    follow one another (Deathless, then Hero), each one's last book joins the next one's first; when
+    they take turns (Warcraft), the rows already show the order and no joins are drawn."""
+    lines: list[str] = []
+    for line, _, _ in rows:
+        if line not in lines:
+            lines.append(line)
+    count = {ln: sum(1 for r in rows if r[0] == ln) for ln in lines}
+    main = max(lines, key=lambda ln: (count[ln], -lines.index(ln))) if lines else name
+    others = [ln for ln in lines if ln != main]
+    left_to_right = others[1::2][::-1] + [main] + others[0::2]
+    colors = {main: _LINE_COLORS[0]}
+    for k, ln in enumerate(others):
+        colors[ln] = _LINE_COLORS[1 + k % (len(_LINE_COLORS) - 1)]
+    lane_of = {ln: k for k, ln in enumerate(left_to_right)}
+    lanes = [{"name": ln, "color": colors[ln], "about": ""} for ln in left_to_right]
+    entries = []
+    for line, bid, label in rows:
+        if line != main and label.startswith("#"):
+            label = f"{line.split(':')[-1].strip()} {label}"  # "Hero #1" beside a bare "#7"
+        entries.append({"book_id": bid, "lane": lane_of[line], "sub": label})
+    runs = [line for k, (line, _, _) in enumerate(rows) if k == 0 or rows[k - 1][0] != line]
+    links = []
+    if len(runs) == len(set(runs)):  # each line in one stretch: chain them end to start
+        for k in range(1, len(rows)):
+            if rows[k][0] != rows[k - 1][0]:
+                links.append((rows[k - 1][1], rows[k][1], "join"))
+    build_lane_map(series_id, name, lanes, entries, links, [])
 
 
 def folded_series(series_id: int) -> list[sqlite3.Row]:

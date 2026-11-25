@@ -418,9 +418,8 @@ FR = {
     "Caveats:": "Réserves :",
     "Sources:": "Sources :",
     "Put the series in this order": "Remettre la série dans cet ordre",
-    "Build a reading map with one section per line": "Créer une carte de lecture avec une section par cycle",
-    "Build a reading map in this order, each book labelled with its line":
-        "Créer une carte de lecture dans cet ordre, chaque livre étiqueté avec son cycle",
+    "Build a lane chart in this order, one lane per line":
+        "Créer une carte en couloirs dans cet ordre, un couloir par cycle",
     "replaces the current map": "remplace la carte actuelle",
     "Ticked missing books are added as manual books and link themselves to Hardcover later. Nothing changes until you apply.":
         "Les livres manquants cochés sont ajoutés à la main et se relient à Hardcover plus tard. Rien ne change avant d'appliquer.",
@@ -500,6 +499,8 @@ FR = {
     "Build a lane chart: the main series in the middle, spin-offs beside it where their stories meet":
         "Créer une carte en couloirs : la série principale au centre, les séries dérivées à côté, là où leurs histoires se croisent",
     "Placement to confirm": "Placement à confirmer",
+    "Covers": "Couvertures",
+    "Show or hide book covers on the map": "Afficher ou masquer les couvertures sur la carte",
 }
 
 # English words whose plural is spelled like the singular ("1 series" / "2 series") but French isn't.

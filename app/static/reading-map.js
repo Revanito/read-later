@@ -65,9 +65,11 @@
     const tip = [n.title, n.title_orig && n.title_orig !== n.title ? T("Original title: {title}").replace("{title}", n.title_orig) : "",
       n.sub, LABEL[n.status], n.lines.length ? T("Lines:") + " " + n.lines.filter((c) => M.lines[c]).map((c) => M.lines[c][0]).join(", ") : "",
       n.stories.length ? T("Stories:") + " " + n.stories.join(", ") : ""].filter(Boolean).join("\n");
-    return `<li><button type="button" class="node st-${n.status}" data-id="${id}" style="--arc:${color}" title="${esc(tip)}">${badge}` +
-      `<span class="t">${esc(n.title)}</span><span class="s"><span>${esc(n.sub)}</span>${dots(n.lines)}` +
-      `<a class="open" href="/books/book/${id}" title="${esc(T("Open book page"))}" aria-label="${esc(T("Open {title}").replace("{title}", n.title))}">&#8599;</a></span></button></li>`;
+    // The cover thumb is always in the markup; CSS shows it only while the map has covers switched on.
+    const cover = n.cover ? `<img class="cv" src="${esc(n.cover)}" alt="" loading="lazy">` : `<span class="cv nocover" aria-hidden="true"></span>`;
+    return `<li><button type="button" class="node st-${n.status}" data-id="${id}" style="--arc:${color}" title="${esc(tip)}">${badge}${cover}` +
+      `<span class="lt"><span class="t">${esc(n.title)}</span><span class="s"><span>${esc(n.sub)}</span>${dots(n.lines)}` +
+      `<a class="open" href="/books/book/${id}" title="${esc(T("Open book page"))}" aria-label="${esc(T("Open {title}").replace("{title}", n.title))}">&#8599;</a></span></span></button></li>`;
   }
 
   function headHtml(name, hint, ids) {
@@ -108,7 +110,9 @@
     const ids = laneIds(s);
     const col = {};
     lanes.forEach((g, k) => g.rows.forEach((r) => r.ids.forEach((id) => (col[id] = k + 2))));
-    let h = `<div class="lanes" data-s="${si}" style="grid-template-columns: var(--rail) repeat(${lanes.length}, minmax(var(--lane), 1fr)); ` +
+    const eras = (s.eras || []).filter((e) => node(e.from)).sort((a, b) => node(a.from).o - node(b.from).o);
+    // No eras (Deathless, research-built charts): no empty rail on the left.
+    let h = `<div class="lanes" data-s="${si}" style="${eras.length ? "" : "--rail: 0px; "}grid-template-columns: var(--rail) repeat(${lanes.length}, minmax(var(--lane), 1fr)); ` +
       `grid-template-rows: auto repeat(${ids.length}, minmax(var(--lrow), auto))">`;
     h += `<div class="lane-head rail" aria-hidden="true"></div>` + lanes.map((g, k) => {
       const mine = g.rows.flatMap((r) => r.ids);
@@ -116,7 +120,6 @@
       return `<div class="lane-head" style="grid-column:${k + 2};--arc:${g.color}"><h3>${esc(g.name)}</h3>` +
         (g.hint ? `<p>${esc(g.hint)}</p>` : "") + `<div class="sub">${done}/${mine.length}</div></div>`;
     }).join("");
-    const eras = (s.eras || []).filter((e) => node(e.from)).sort((a, b) => node(a.from).o - node(b.from).o);
     eras.forEach((e, k) => {
       const from = node(e.from).o + 1, to = k + 1 < eras.length ? node(eras[k + 1].from).o + 1 : ids.length + 2;
       h += `<div class="lane-era" style="grid-row:${from} / ${to}"><div class="era-label"><strong>${esc(e.name)}</strong>` +
@@ -332,7 +335,27 @@
     renderAll();
   }
   buttons.forEach((b) => b.addEventListener("click", () => setView(b.dataset.view)));
-  map.style.setProperty("--col", `${M.col}px`);
+
+  // Covers on the plain map cards (lane cards always have theirs). Remembered per browser; the columns
+  // widen by the thumb's width so titles keep the room they had without covers.
+  const COVER_W = 32;
+  const coverBtn = document.getElementById("cover-toggle");
+  let covers = true;
+  try { covers = localStorage.getItem("rl-map-covers") !== "off"; } catch {}
+  function setCovers(on) {
+    covers = on;
+    map.classList.toggle("covers", on);
+    map.style.setProperty("--col", `${M.col + (on ? COVER_W : 0)}px`);
+    if (coverBtn) coverBtn.setAttribute("aria-pressed", String(on));
+  }
+  if (coverBtn && M.sections.some((s) => s.kind !== "lanes")) {
+    coverBtn.hidden = false;
+    coverBtn.addEventListener("click", () => {
+      setCovers(!covers);
+      try { localStorage.setItem("rl-map-covers", covers ? "on" : "off"); } catch {}
+    });
+  }
+  setCovers(covers);
   new ResizeObserver(() => { if (view === "map") requestAnimationFrame(drawWires); }).observe(map);
   let initial = "map";
   try { initial = new URLSearchParams(location.search).get("view") || localStorage.getItem(key) || "map"; } catch {}

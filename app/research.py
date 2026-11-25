@@ -224,19 +224,13 @@ def apply(series_id: int, add: set[int], reorder: bool, build_map: bool, build_l
         _build_lanes(series_id, s, st, placed)
         stats["mapped"] = stats["ordered"] = True
     elif build_map:
-        _, interleaved = line_layout([it for it, _ in placed])
-        lines: dict[str, list[tuple[int, str]]] = {}
+        # One lane per line, one row per book in the researched order (so Warcraft-style lines that
+        # take turns keep their order too).
+        rows = []
         for it, bid in placed:
-            line = _line(it, s["name"])
             num = str(it.get("number") or "").strip()
-            sub = num if not num or not num[0].isdigit() else f"#{num}"
-            if interleaved:
-                # Lines take turns (Warcraft's chronological order): one column in the researched order,
-                # each book labelled with its line, so the order survives.
-                lines.setdefault(s["name"], []).append((bid, f"{line} · {sub}" if sub else line))
-            else:
-                lines.setdefault(line, []).append((bid, sub))
-        books_db.build_line_map(series_id, list(lines.items()))
+            rows.append((_line(it, s["name"]), bid, num if not num or not num[0].isdigit() else f"#{num}"))
+        books_db.build_line_map(series_id, s["name"], rows)
         stats["mapped"] = True
     return stats
 
